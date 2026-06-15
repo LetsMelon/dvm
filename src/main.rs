@@ -30,17 +30,21 @@ enum Opcode {
     DupN(u8),
     Swap(SwapDirection, u8),
     Xor,
+    /// Pops the top two values and pushes 1 if both are non-zero, otherwise 0
+    And,
+    /// Pops the top two values and pushes 1 if either is non-zero, otherwise 0
+    Or,
     Zero,
     PushIntermediate(i64),
     Add,
     Sub,
     SmallerThan,
-    /// Jump to the opcode at the given delta if the top of the stack is non-zero
-    JumpIfTrue(i32),
+    /// Pops a delta from the stack and jumps to that opcode if the next stack value is non-zero
+    JumpIfTrue,
     Not,
     Print,
     PrintN(u8),
-    /// Jump to the opcode at the given delta unconditionally
+    /// Pops a delta from the stack and jumps to that opcode unconditionally
     Jump,
     OperationCounter,
 }
@@ -57,6 +61,17 @@ impl<'a> MemoryLane<'a> {
             MemoryLane::ReadWrite(slice) => slice.len() as u64,
         }
     }
+
+    fn read(&self, address: usize) -> Result<u8, String> {
+        let value = match self {
+            MemoryLane::ReadOnly(slice) => slice.get(address),
+            MemoryLane::ReadWrite(slice) => slice.get(address),
+        };
+
+        value
+            .copied()
+            .ok_or_else(|| "Read address out of bounds".to_string())
+    }
 }
 
 fn main() {
@@ -70,7 +85,7 @@ fn main() {
 
     let mut ip_counter = 0;
     let mut current_memory_lane = 0;
-    let mut stack = Vec::new();
+    let mut stack = Vec::with_capacity(128);
     let mut op_counter = 0;
 
     let opcodes = [
@@ -83,59 +98,72 @@ fn main() {
         Opcode::Zero,                // index = 0
         Opcode::DupN(2),             // copy index and size for the loop condition
         Opcode::SmallerThan,         // compute index < size
-        Opcode::JumpIfTrue(4),       // if true continue into the loop body
+        Opcode::PushIntermediate(4), // delta to continue into the loop body
+        Opcode::JumpIfTrue,          // if true continue into the loop body
         Opcode::Pop,                 // else drop index
         Opcode::Pop,                 // else drop size
-        Opcode::PushIntermediate(1), // push true to force an exit jump
-        Opcode::JumpIfTrue(68),      // jump past the loop body
-        Opcode::Dup,                 // copy index so one copy can be consumed by Read
+        Opcode::PushIntermediate(1000), // explicit exit past the program
+        Opcode::Jump,                // leave the program
+        Opcode::Dup,                 // loop body: copy index so one copy can be consumed by Read
         Opcode::Read,                // byte = file[index]
+        Opcode::PushIntermediate(-41), // return delta from is_text_function back to the branch site
+        Opcode::Swap(SwapDirection::Right, 2), // keep the return delta below the original byte
         Opcode::Dup,                 // duplicate byte for the space check
         Opcode::PushIntermediate(' ' as i64), // push ' '
         Opcode::Xor,                 // byte ^ ' '
         Opcode::Not,                 // check byte == ' '
-        Opcode::JumpIfTrue(52),      // if separator jump to the separator handler
+        Opcode::Swap(SwapDirection::Right, 2), // move the byte back to the top for the next check
         Opcode::Dup,                 // duplicate byte for the comma check
         Opcode::PushIntermediate(',' as i64), // push ','
         Opcode::Xor,                 // byte ^ ','
         Opcode::Not,                 // check byte == ','
-        Opcode::JumpIfTrue(47),      // if separator jump to the separator handler
+        Opcode::Swap(SwapDirection::Right, 2), // move the byte back to the top for the next check
         Opcode::Dup,                 // duplicate byte for the exclamation check
         Opcode::PushIntermediate('!' as i64), // push '!'
         Opcode::Xor,                 // byte ^ '!'
         Opcode::Not,                 // check byte == '!'
-        Opcode::JumpIfTrue(42),      // if separator jump to the separator handler
+        Opcode::Swap(SwapDirection::Right, 2), // move the byte back to the top for the next check
         Opcode::Dup,                 // duplicate byte for the dot check
         Opcode::PushIntermediate('.' as i64), // push '.'
         Opcode::Xor,                 // byte ^ '.'
         Opcode::Not,                 // check byte == '.'
-        Opcode::JumpIfTrue(37),      // if separator jump to the separator handler
+        Opcode::Swap(SwapDirection::Right, 2), // move the byte back to the top for the next check
         Opcode::Dup,                 // duplicate byte for the newline check
         Opcode::PushIntermediate('\n' as i64), // push newline
         Opcode::Xor,                 // byte ^ '\n'
         Opcode::Not,                 // check byte == '\n'
-        Opcode::JumpIfTrue(32),      // if separator jump to the separator handler
+        Opcode::Swap(SwapDirection::Right, 2), // move the byte back to the top for the next check
         Opcode::Dup,                 // duplicate byte for the carriage-return check
         Opcode::PushIntermediate('\r' as i64), // push carriage return
         Opcode::Xor,                 // byte ^ '\r'
         Opcode::Not,                 // check byte == '\r'
-        Opcode::JumpIfTrue(27),      // if separator jump to the separator handler
-        Opcode::Dup,                 // duplicate byte for the tab check
-        Opcode::PushIntermediate('\t' as i64), // push tab
+        Opcode::Swap(SwapDirection::Right, 2), // move the byte back to the top for the next check
+        Opcode::PushIntermediate('\t' as i64), // push tab for the final check
         Opcode::Xor,                 // byte ^ '\t'
         Opcode::Not,                 // check byte == '\t'
-        Opcode::JumpIfTrue(22),      // if separator jump to the separator handler
-        Opcode::Pop,                 // non-separator: drop byte
-        Opcode::SwitchMemoryLane(0), // switch to heap lane
+        Opcode::PushIntermediate(32), // delta to is_text_function
+        Opcode::Jump,                // call is_text_function
+        Opcode::PushIntermediate(8), // delta to the text handler
+        Opcode::JumpIfTrue,          // if is_text jump to the text handler
+        Opcode::SwitchMemoryLane(0), // separator: switch to heap lane
+        Opcode::Zero,                // push 0
+        Opcode::Write(0),            // in_word = 0 at heap[0]
+        Opcode::SwitchMemoryLane(1), // switch back to file lane
+        Opcode::PushIntermediate(1), // push 1
+        Opcode::Add,                 // index += 1
+        Opcode::PushIntermediate(-57), // delta back to the loop condition
+        Opcode::Jump,                // loop
+        Opcode::SwitchMemoryLane(0), // text: switch to heap lane
         Opcode::Zero,                // push address 0
         Opcode::Read,                // load in_word from heap[0]
         Opcode::Not,                 // check in_word == 0
-        Opcode::JumpIfTrue(5),       // if not already in a word, jump to start_new_word
+        Opcode::PushIntermediate(5), // delta to start_new_word
+        Opcode::JumpIfTrue,          // if not already in a word, jump to start_new_word
         Opcode::SwitchMemoryLane(1), // continue current word: switch back to file lane
         Opcode::PushIntermediate(1), // push 1
         Opcode::Add,                 // index += 1
-        Opcode::PushIntermediate(1), // push true to force the loop jump
-        Opcode::JumpIfTrue(-55),     // jump back to the loop condition
+        Opcode::PushIntermediate(-68), // delta back to the loop condition
+        Opcode::Jump,                // loop
         Opcode::Swap(SwapDirection::Left, 3), // start_new_word: rotate [count, size, index] to [size, index, count]
         Opcode::PushIntermediate(1),          // push 1
         Opcode::Add,                          // count += 1
@@ -145,17 +173,17 @@ fn main() {
         Opcode::SwitchMemoryLane(1),          // switch back to file lane
         Opcode::PushIntermediate(1),          // push 1
         Opcode::Add,                          // index += 1
-        Opcode::PushIntermediate(1),          // push true to force the loop jump
-        Opcode::JumpIfTrue(-66),              // jump back to the loop condition
-        Opcode::Pop,                          // separator: drop byte
-        Opcode::SwitchMemoryLane(0),          // switch to heap lane
-        Opcode::Zero,                         // push 0
-        Opcode::Write(0),                     // in_word = 0 at heap[0]
-        Opcode::SwitchMemoryLane(1),          // switch back to file lane
-        Opcode::PushIntermediate(1),          // push 1
-        Opcode::Add,                          // index += 1
-        Opcode::PushIntermediate(1),          // push true to force the loop jump
-        Opcode::JumpIfTrue(-75),              // jump back to the loop condition
+        Opcode::PushIntermediate(-79),        // delta back to the loop condition
+        Opcode::Jump,                         // loop
+        Opcode::Or,                           // (c == '\r') || (c == '\t')
+        Opcode::Or,                           // accumulate separator matches
+        Opcode::Or,                           // accumulate separator matches
+        Opcode::Or,                           // accumulate separator matches
+        Opcode::Or,                           // accumulate separator matches
+        Opcode::Or,                           // current byte is a separator
+        Opcode::Not,                          // result: current byte is text
+        Opcode::Swap(SwapDirection::Left, 2), // move the saved return delta to the top
+        Opcode::Jump,                         // return with is_text left on the stack
     ];
 
     // let opcodes = [
@@ -211,7 +239,7 @@ fn main() {
         .duration_since(start)
         .unwrap_or(std::time::Duration::from_secs(0));
 
-    // println!("Word count: {}", stack.last().copied().unwrap_or(0));
+    println!("Word count: {}", stack.last().copied().unwrap_or(0));
     println!("\nExecution finished after {} operations", op_counter);
     println!("Execution time: {:?}", duration);
     println!(
@@ -220,9 +248,9 @@ fn main() {
     );
 
     println!("\nLine metrics:");
-    println!("Count\tOpcode");
+    println!("Count\tLine\tOpcode");
     for (i, count) in line_metrics.iter().enumerate() {
-        println!("{}\t{:?}", count, opcodes[i]);
+        println!("{}\t{:?}\t{:?}", count, i, opcodes[i]);
     }
 }
 
@@ -251,10 +279,10 @@ fn step(
 
     line_metrics[*ip_counter] += 1;
 
-    println!(
-        "IP: {}, Opcode: {:?}, Current Memory Lane: {}, Stack: {:?}",
-        *ip_counter, opcode, current_memory_lane, stack
-    );
+    // println!(
+    //     "IP: {}, Opcode: {:?}, Current Memory Lane: {}, Stack: {:?}",
+    //     *ip_counter, opcode, current_memory_lane, stack
+    // );
 
     let memory_lane = memory_lanes
         .get_mut(*current_memory_lane as usize)
@@ -263,15 +291,7 @@ fn step(
     match opcode {
         Opcode::Read => {
             let address = pop_i64(stack)? as usize;
-            let value = match memory_lane {
-                MemoryLane::ReadOnly(slice) => {
-                    *slice.get(address).ok_or("Read address out of bounds")?
-                }
-                MemoryLane::ReadWrite(slice) => {
-                    *slice.get(address).ok_or("Read address out of bounds")?
-                }
-            };
-
+            let value = memory_lane.read(address)? as i64;
             stack.push(value as i64);
             *ip_counter += 1;
         }
@@ -349,6 +369,18 @@ fn step(
             stack.push(a ^ b);
             *ip_counter += 1;
         }
+        Opcode::And => {
+            let a = pop_i64(stack)?;
+            let b = pop_i64(stack)?;
+            stack.push(((a != 0) && (b != 0)) as i64);
+            *ip_counter += 1;
+        }
+        Opcode::Or => {
+            let a = pop_i64(stack)?;
+            let b = pop_i64(stack)?;
+            stack.push(((a != 0) || (b != 0)) as i64);
+            *ip_counter += 1;
+        }
         Opcode::Zero => {
             stack.push(0);
             *ip_counter += 1;
@@ -375,11 +407,12 @@ fn step(
             stack.push((a < b) as i64);
             *ip_counter += 1;
         }
-        Opcode::JumpIfTrue(delta_address) => {
+        Opcode::JumpIfTrue => {
+            let delta_address = pop_i64(stack)?;
             let condition = pop_i64(stack)?;
             if condition != 0 {
                 // TODO add check if we have have a ip counter that is negative
-                *ip_counter = ((*ip_counter as i64) + (*delta_address as i64) + 1) as usize;
+                *ip_counter = ((*ip_counter as i64) + delta_address + 1) as usize;
             } else {
                 *ip_counter += 1;
             }
