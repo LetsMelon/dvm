@@ -2,11 +2,12 @@ use crate::{
     memory_lane::MemoryLane,
     opcode::{Opcode, SwapDirection},
     program::Program,
+    stack::Stack,
 };
 
 pub struct Vm<'a> {
     op_counter: u64,
-    stack: Vec<i64>,
+    stack: Stack,
     memory_lanes: Box<[MemoryLane<'a>]>,
 }
 
@@ -14,7 +15,7 @@ impl<'a> Vm<'a> {
     pub fn new(memory_lanes: Box<[MemoryLane<'a>]>) -> Self {
         Vm {
             op_counter: 0,
-            stack: Vec::with_capacity(128),
+            stack: Stack::new(128),
             memory_lanes,
         }
     }
@@ -37,24 +38,12 @@ impl<'a> Vm<'a> {
     }
 }
 
-fn pop_i64(stack: &mut Vec<i64>) -> Result<i64, String> {
-    stack.pop().ok_or("Stack underflow".into())
-}
-
-#[inline]
-fn rotate_top(stack: &mut [i64], direction: SwapDirection) {
-    match direction {
-        SwapDirection::Left => stack.rotate_left(1),
-        SwapDirection::Right => stack.rotate_right(1),
-    }
-}
-
 #[inline]
 fn step(
     program: &[Opcode],
     ip_counter: &mut usize,
     current_memory_lane: &mut u8,
-    stack: &mut Vec<i64>,
+    stack: &mut Stack,
     memory_lanes: &mut [MemoryLane],
     line_metrics: &mut [u64],
 ) -> Result<bool, String> {
@@ -75,13 +64,13 @@ fn step(
 
     match opcode {
         Opcode::Read => {
-            let address = pop_i64(stack)? as usize;
+            let address = stack.pop()? as usize;
             let value = memory_lane.read(address)? as i64;
             stack.push(value as i64);
             *ip_counter += 1;
         }
         Opcode::Write(address) => {
-            let value = pop_i64(stack)?;
+            let value = stack.pop()?;
             if let MemoryLane::ReadWrite(slice) = memory_lane {
                 let value_byte = (value & 0xFF) as u8;
                 slice[*address as usize] = value_byte;
@@ -102,17 +91,17 @@ fn step(
             *ip_counter += 1;
         }
         Opcode::Pop => {
-            let _ = pop_i64(stack)?;
+            let _ = stack.pop()?;
             *ip_counter += 1;
         }
         Opcode::Pop32bits => {
             for _ in 0..4 {
-                let _ = pop_i64(stack)?;
+                let _ = stack.pop()?;
             }
             *ip_counter += 1;
         }
         Opcode::Dup => {
-            let value = *stack.last().ok_or("Stack underflow")?;
+            let value = stack.top()?;
             stack.push(value);
             *ip_counter += 1;
         }
@@ -122,13 +111,13 @@ fn step(
                 return Err("DupN requires n >= 1".into());
             }
 
-            let len = stack.len();
+            let len = stack.size();
             if n > len {
                 return Err("Stack underflow".into());
             }
 
             for i in 0..n {
-                let value = stack[len - n + i];
+                let value = stack.get(len - n + i)?;
                 stack.push(value);
             }
 
@@ -140,29 +129,37 @@ fn step(
                 return Err("Swap requires n >= 2".into());
             }
 
-            let len = stack.len();
+            let len = stack.size();
             if n > len {
                 return Err("Stack underflow".into());
             }
 
-            rotate_top(&mut stack[len - n..], *direction);
+            match direction {
+                SwapDirection::Left => stack.rotate_left_once_last_n(n)?,
+                SwapDirection::Right => {
+                    for _ in 0..(n - 1) {
+                        stack.rotate_left_once_last_n(n)?;
+                    }
+                }
+            }
+
             *ip_counter += 1;
         }
         Opcode::Xor => {
-            let a = pop_i64(stack)?;
-            let b = pop_i64(stack)?;
+            let a = stack.pop()?;
+            let b = stack.pop()?;
             stack.push(a ^ b);
             *ip_counter += 1;
         }
         Opcode::And => {
-            let a = pop_i64(stack)?;
-            let b = pop_i64(stack)?;
+            let a = stack.pop()?;
+            let b = stack.pop()?;
             stack.push(((a != 0) && (b != 0)) as i64);
             *ip_counter += 1;
         }
         Opcode::Or => {
-            let a = pop_i64(stack)?;
-            let b = pop_i64(stack)?;
+            let a = stack.pop()?;
+            let b = stack.pop()?;
             stack.push(((a != 0) || (b != 0)) as i64);
             *ip_counter += 1;
         }
@@ -175,26 +172,26 @@ fn step(
             *ip_counter += 1;
         }
         Opcode::Add => {
-            let a = pop_i64(stack)?;
-            let b = pop_i64(stack)?;
+            let a = stack.pop()?;
+            let b = stack.pop()?;
             stack.push(a.wrapping_add(b));
             *ip_counter += 1;
         }
         Opcode::Sub => {
-            let a = pop_i64(stack)?;
-            let b = pop_i64(stack)?;
+            let a = stack.pop()?;
+            let b = stack.pop()?;
             stack.push(a.wrapping_sub(b));
             *ip_counter += 1;
         }
         Opcode::SmallerThan => {
-            let a = pop_i64(stack)?;
-            let b = pop_i64(stack)?;
+            let a = stack.pop()?;
+            let b = stack.pop()?;
             stack.push((a < b) as i64);
             *ip_counter += 1;
         }
         Opcode::JumpIfTrue => {
-            let delta_address = pop_i64(stack)?;
-            let condition = pop_i64(stack)?;
+            let delta_address = stack.pop()?;
+            let condition = stack.pop()?;
             if condition != 0 {
                 // TODO add check if we have have a ip counter that is negative
                 *ip_counter = ((*ip_counter as i64) + delta_address + 1) as usize;
@@ -203,27 +200,30 @@ fn step(
             }
         }
         Opcode::Not => {
-            let value = pop_i64(stack)?;
+            let value = stack.pop()?;
             stack.push((value == 0) as i64);
             *ip_counter += 1;
         }
         Opcode::Print => {
-            let value = pop_i64(stack)?;
+            let value = stack.pop()?;
             print!("{}", value as u8 as char);
             *ip_counter += 1;
         }
         Opcode::PrintN(size) => {
             let size = *size as usize;
-            let len = stack.len();
+            let len = stack.size();
             if size > len {
                 return Err("Stack underflow".into());
             }
 
             for i in 0..size {
-                let value = stack[len - size + i];
+                let value = stack.get(len - size + i)?;
                 print!("{}", value as u8 as char);
             }
-            stack.truncate(stack.len() - size);
+
+            for i in 0..size {
+                stack.pop()?;
+            }
 
             *ip_counter += 1;
         }
@@ -232,7 +232,7 @@ fn step(
             *ip_counter += 1;
         }
         Opcode::Jump => {
-            let delta_address = pop_i64(stack)? as i64;
+            let delta_address = stack.pop()? as i64;
             // TODO add check if we have have a ip counter that is negative
             *ip_counter = ((*ip_counter as i64) + delta_address + 1) as usize;
         }
