@@ -24,4 +24,8 @@ impl<'a> Program<'a> {
     pub fn get_line_metrics(&self) -> &[u64] {
         &self.line_metrics
     }
+
+    pub fn get_opcodes(&self) -> &[Opcode] {
+        self.opcodes
+    }
 }

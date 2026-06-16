@@ -1,0 +1,95 @@
+SwitchMemoryLane 0
+Zero
+Write 0
+Zero
+SwitchMemoryLane 1
+SizeOfMemoryLane
+Zero
+DupN 2
+SmallerThan
+PushIntermediate 4
+JumpIfTrue
+Pop
+Pop
+PushIntermediate 1000
+Jump
+Dup
+Read
+PushIntermediate -41
+Swap Right 2
+Dup
+PushIntermediate 32
+Xor
+Not
+Swap Right 2
+Dup
+PushIntermediate 44
+Xor
+Not
+Swap Right 2
+Dup
+PushIntermediate 33
+Xor
+Not
+Swap Right 2
+Dup
+PushIntermediate 46
+Xor
+Not
+Swap Right 2
+Dup
+PushIntermediate 10
+Xor
+Not
+Swap Right 2
+Dup
+PushIntermediate 13
+Xor
+Not
+Swap Right 2
+PushIntermediate 9
+Xor
+Not
+PushIntermediate 32
+Jump
+PushIntermediate 8
+JumpIfTrue
+SwitchMemoryLane 0
+Zero
+Write 0
+SwitchMemoryLane 1
+PushIntermediate 1
+Add
+PushIntermediate -57
+Jump
+SwitchMemoryLane 0
+Zero
+Read
+Not
+PushIntermediate 5
+JumpIfTrue
+SwitchMemoryLane 1
+PushIntermediate 1
+Add
+PushIntermediate -68
+Jump
+Swap Left 3
+PushIntermediate 1
+Add
+Swap Right 3
+PushIntermediate 1
+Write 0
+SwitchMemoryLane 1
+PushIntermediate 1
+Add
+PushIntermediate -79
+Jump
+Or
+Or
+Or
+Or
+Or
+Or
+Not
+Swap Left 2
+Jump

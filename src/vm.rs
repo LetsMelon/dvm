@@ -221,7 +221,7 @@ fn step(
                 print!("{}", value as u8 as char);
             }
 
-            for i in 0..size {
+            for _ in 0..size {
                 stack.pop()?;
             }
 

@@ -1,40 +1,10 @@
-use std::time::SystemTime;
-
 use dvm::{
-    memory_lane::MemoryLane,
     opcode::{Opcode, SwapDirection},
     program::Program,
-    vm::Vm,
 };
 
-// let opcodes = [
-//     Opcode::PushIntermediate(3),          // 0      - a = 3
-//     Opcode::OperationCounter,             // 1      - ip1 = readOperationCounter()
-//     Opcode::PushIntermediate(3),          // 2      - &c = 3
-//     Opcode::Jump,                         // 3      - *c()
-//     Opcode::Noop,                         // 4      -
-//     Opcode::PushIntermediate(1000),       // 5      - &b = 1000
-//     Opcode::Jump,                         // 6      - *b()
-//     Opcode::Noop,                         // 7      -
-//     Opcode::Noop,                         // 8      -
-//     Opcode::OperationCounter,             // 9      - ip2 = readOperationCounter()
-//     Opcode::Swap(SwapDirection::Left, 2), // 10     - ip1, ip2 = ip2, ip1
-//     Opcode::Sub,                          // 11     - &delta = ip1 - ip2
-//     Opcode::Jump,                         // 12     - *delta()
-// ];
-
-fn main() {
-    let mut heap_memory_lane = [0; 1024];
-    let io_memory_lane = include_bytes!("../test.txt");
-
-    let memory_lanes = [
-        MemoryLane::ReadWrite(&mut heap_memory_lane),
-        MemoryLane::ReadOnly(io_memory_lane),
-    ];
-
-    let mut vm = Vm::new(Box::new(memory_lanes));
-
-    let opcodes = [
+fn program_word_count() -> Vec<Opcode> {
+    vec![
         Opcode::SwitchMemoryLane(0), // switch to heap lane for the in_word flag
         Opcode::Zero,                // push 0
         Opcode::Write(0),            // in_word = 0 at heap[0]
@@ -130,9 +100,37 @@ fn main() {
         Opcode::Not,                          // result: current byte is text
         Opcode::Swap(SwapDirection::Left, 2), // move the saved return delta to the top
         Opcode::Jump,                         // return with is_text left on the stack
+    ]
+}
+
+fn print_program(program: &Program) {
+    for opcode in program.get_opcodes() {
+        println!(
+            "{}",
+            serde_plain::to_string(&opcode)
+                .expect(&format!("Could not deserialize opcode={:?}", opcode))
+        );
+    }
+}
+
+fn main() {
+    use std::time::SystemTime;
+
+    use dvm::{memory_lane::MemoryLane, program::Program, vm::Vm};
+
+    let mut heap_memory_lane = [0; 1024];
+    let io_memory_lane = include_bytes!("../test.txt");
+
+    let memory_lanes = [
+        MemoryLane::ReadWrite(&mut heap_memory_lane),
+        MemoryLane::ReadOnly(io_memory_lane),
     ];
 
+    let mut vm = Vm::new(Box::new(memory_lanes));
+    let opcodes = program_word_count();
     let mut program = Program::new(&opcodes);
+
+    print_program(&program);
 
     let start = SystemTime::now();
 
