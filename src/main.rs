@@ -1,4 +1,4 @@
-use std::{env, fs, ops::Index, process::ExitCode, time::SystemTime};
+use std::{env, fs, process::ExitCode, time::SystemTime};
 
 use dvm::{memory_lane::MemoryLane, opcode::Opcode, program::Program, vm::Vm};
 

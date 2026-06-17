@@ -11,7 +11,7 @@ PushIntermediate 4
 JumpIfTrue
 Pop
 Pop
-PushIntermediate 1000
+PushIntermediate 80
 Jump
 Dup
 Read
@@ -92,4 +92,39 @@ Or
 Or
 Not
 Swap Left 2
+Jump
+Zero
+Swap Left 2
+Dup
+PushIntermediate 10
+Swap Left 2
+SmallerThan
+PushIntermediate 9
+JumpIfTrue
+PushIntermediate 10
+Swap Left 2
+Sub
+Swap Left 2
+PushIntermediate 1
+Add
+Swap Right 2
+PushIntermediate -15
+Jump
+Swap Left 2
+Dup
+Not
+PushIntermediate 5
+JumpIfTrue
+PushIntermediate 48
+Add
+Print
+PushIntermediate 1
+Jump
+Pop
+PushIntermediate 48
+Add
+Print
+PushIntermediate 10
+Print
+PushIntermediate 1000
 Jump
