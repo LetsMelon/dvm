@@ -1,6 +1,6 @@
 use crate::{
     memory_lane::MemoryLane,
-    opcode::{Opcode, SwapDirection},
+    opcode::Opcode,
     program::Program,
     stack::Stack,
 };
@@ -91,18 +91,19 @@ fn execute_opcode(
             stack.push(value as i64);
             *ip_counter += 1;
         }
-        Opcode::Write(address) => {
+        Opcode::Write => {
+            let address = stack.pop()? as usize;
             let value = stack.pop()?;
             if let MemoryLane::ReadWrite(slice) = memory_lane {
                 let value_byte = (value & 0xFF) as u8;
-                slice[*address as usize] = value_byte;
+                slice[address] = value_byte;
             } else {
                 return Err("Cannot write to read-only memory lane".into());
             }
             *ip_counter += 1;
         }
-        Opcode::SwitchMemoryLane(lane) => {
-            *current_memory_lane = *lane;
+        Opcode::SwitchMemoryLane => {
+            *current_memory_lane = stack.pop()? as u8;
             *ip_counter += 1;
         }
         Opcode::SizeOfMemoryLane => {
@@ -127,8 +128,8 @@ fn execute_opcode(
             stack.push(value);
             *ip_counter += 1;
         }
-        Opcode::DupN(n) => {
-            let n = *n as usize;
+        Opcode::DupN => {
+            let n = stack.pop()? as usize;
             if n == 0 {
                 return Err("DupN requires n >= 1".into());
             }
@@ -145,24 +146,26 @@ fn execute_opcode(
 
             *ip_counter += 1;
         }
-        Opcode::Swap(direction, n) => {
-            let n = *n as usize;
+        Opcode::Swap => {
+            let n = stack.pop()? as usize;
             if n < 2 {
                 return Err("Swap requires n >= 2".into());
             }
 
+            let direction = stack.pop()?;
             let len = stack.size();
             if n > len {
                 return Err("Stack underflow".into());
             }
 
             match direction {
-                SwapDirection::Left => stack.rotate_left_once_last_n(n)?,
-                SwapDirection::Right => {
+                0 => stack.rotate_left_once_last_n(n)?,
+                1 => {
                     for _ in 0..(n - 1) {
                         stack.rotate_left_once_last_n(n)?;
                     }
                 }
+                _ => return Err("Swap direction must be 0 (left) or 1 (right)".into()),
             }
 
             *ip_counter += 1;
@@ -231,8 +234,8 @@ fn execute_opcode(
             print!("{}", value as u8 as char);
             *ip_counter += 1;
         }
-        Opcode::PrintN(size) => {
-            let size = *size as usize;
+        Opcode::PrintN => {
+            let size = stack.pop()? as usize;
             let len = stack.size();
             if size > len {
                 return Err("Stack underflow".into());

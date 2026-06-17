@@ -12,6 +12,7 @@ impl<'a> MemoryLane<'a> {
     }
 
     pub fn read(&self, address: usize) -> Result<u8, String> {
+        let size = self.size() as usize;
         let value = match self {
             MemoryLane::ReadOnly(slice) => slice.get(address),
             MemoryLane::ReadWrite(slice) => slice.get(address),
@@ -19,6 +20,6 @@ impl<'a> MemoryLane<'a> {
 
         value
             .copied()
-            .ok_or_else(|| "Read address out of bounds".to_string())
+            .ok_or_else(|| format!("Read address {address} out of bounds for lane size {size}"))
     }
 }

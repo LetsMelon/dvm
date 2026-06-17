@@ -1,88 +1,117 @@
-SwitchMemoryLane 0
+PushIntermediate 0
+SwitchMemoryLane
 Zero
-Write 0
 Zero
-SwitchMemoryLane 1
+Write
+Zero
+PushIntermediate 1
+SwitchMemoryLane
 SizeOfMemoryLane
 Zero
-DupN 2
+PushIntermediate 2
+DupN
 SmallerThan
 PushIntermediate 4
 JumpIfTrue
 Pop
 Pop
-PushIntermediate 80
+PushIntermediate 107
 Jump
 Dup
 Read
-PushIntermediate -41
-Swap Right 2
+PushIntermediate -54
+PushIntermediate 1
+PushIntermediate 2
+Swap
 Dup
 PushIntermediate 32
 Xor
 Not
-Swap Right 2
+PushIntermediate 1
+PushIntermediate 2
+Swap
 Dup
 PushIntermediate 44
 Xor
 Not
-Swap Right 2
+PushIntermediate 1
+PushIntermediate 2
+Swap
 Dup
 PushIntermediate 33
 Xor
 Not
-Swap Right 2
+PushIntermediate 1
+PushIntermediate 2
+Swap
 Dup
 PushIntermediate 46
 Xor
 Not
-Swap Right 2
+PushIntermediate 1
+PushIntermediate 2
+Swap
 Dup
 PushIntermediate 10
 Xor
 Not
-Swap Right 2
+PushIntermediate 1
+PushIntermediate 2
+Swap
 Dup
 PushIntermediate 13
 Xor
 Not
-Swap Right 2
+PushIntermediate 1
+PushIntermediate 2
+Swap
 PushIntermediate 9
 Xor
 Not
-PushIntermediate 32
+PushIntermediate 43
 Jump
-PushIntermediate 8
+PushIntermediate 11
 JumpIfTrue
-SwitchMemoryLane 0
+PushIntermediate 0
+SwitchMemoryLane
 Zero
-Write 0
-SwitchMemoryLane 1
+Zero
+Write
+PushIntermediate 1
+SwitchMemoryLane
 PushIntermediate 1
 Add
-PushIntermediate -57
+PushIntermediate -75
 Jump
-SwitchMemoryLane 0
+PushIntermediate 0
+SwitchMemoryLane
 Zero
 Read
 Not
-PushIntermediate 5
+PushIntermediate 6
 JumpIfTrue
-SwitchMemoryLane 1
+PushIntermediate 1
+SwitchMemoryLane
 PushIntermediate 1
 Add
-PushIntermediate -68
+PushIntermediate -88
 Jump
-Swap Left 3
+PushIntermediate 0
+PushIntermediate 3
+Swap
 PushIntermediate 1
 Add
-Swap Right 3
 PushIntermediate 1
-Write 0
-SwitchMemoryLane 1
+PushIntermediate 3
+Swap
+PushIntermediate 1
+Zero
+Write
+PushIntermediate 1
+SwitchMemoryLane
 PushIntermediate 1
 Add
-PushIntermediate -79
+PushIntermediate -105
 Jump
 Or
 Or
@@ -91,26 +120,40 @@ Or
 Or
 Or
 Not
-Swap Left 2
+PushIntermediate 0
+PushIntermediate 2
+Swap
 Jump
 Zero
-Swap Left 2
+PushIntermediate 0
+PushIntermediate 2
+Swap
 Dup
 PushIntermediate 10
-Swap Left 2
+PushIntermediate 0
+PushIntermediate 2
+Swap
 SmallerThan
-PushIntermediate 9
+PushIntermediate 15
 JumpIfTrue
 PushIntermediate 10
-Swap Left 2
+PushIntermediate 0
+PushIntermediate 2
+Swap
 Sub
-Swap Left 2
+PushIntermediate 0
+PushIntermediate 2
+Swap
 PushIntermediate 1
 Add
-Swap Right 2
-PushIntermediate -15
+PushIntermediate 1
+PushIntermediate 2
+Swap
+PushIntermediate -23
 Jump
-Swap Left 2
+PushIntermediate 0
+PushIntermediate 2
+Swap
 Dup
 Not
 PushIntermediate 5
