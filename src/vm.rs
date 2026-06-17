@@ -23,41 +23,63 @@ impl<'a> Vm<'a> {
     pub fn step<'b>(&mut self, program: &mut Program<'b>) -> Result<bool, String> {
         self.op_counter += 1;
 
-        step(
-            program.opcodes,
+        step(program, &mut self.stack, &mut self.memory_lanes)
+    }
+
+    pub fn execute_opcode<'b>(
+        &mut self,
+        program: &mut Program<'b>,
+        opcode: &Opcode,
+    ) -> Result<bool, String> {
+        self.op_counter += 1;
+        execute_opcode(
+            opcode,
             &mut program.ip_counter,
             &mut program.current_memory_lane,
             &mut self.stack,
             &mut self.memory_lanes,
-            &mut program.line_metrics,
         )
     }
 
     pub fn get_op_counter(&self) -> u64 {
         self.op_counter
     }
+
+    pub fn get_stack(&self) -> &[i64] {
+        self.stack.as_slice()
+    }
 }
 
 #[inline]
 fn step(
-    program: &[Opcode],
+    program: &mut Program<'_>,
+    stack: &mut Stack,
+    memory_lanes: &mut [MemoryLane],
+) -> Result<bool, String> {
+    let opcode = program
+        .opcodes
+        .get(program.ip_counter)
+        .ok_or("Instruction pointer out of bounds")?;
+
+    program.line_metrics[program.ip_counter] += 1;
+
+    execute_opcode(
+        opcode,
+        &mut program.ip_counter,
+        &mut program.current_memory_lane,
+        stack,
+        memory_lanes,
+    )
+}
+
+#[inline]
+fn execute_opcode(
+    opcode: &Opcode,
     ip_counter: &mut usize,
     current_memory_lane: &mut u8,
     stack: &mut Stack,
     memory_lanes: &mut [MemoryLane],
-    line_metrics: &mut [u64],
 ) -> Result<bool, String> {
-    let opcode = program
-        .get(*ip_counter)
-        .ok_or("Instruction pointer out of bounds")?;
-
-    line_metrics[*ip_counter] += 1;
-
-    // println!(
-    //     "IP: {}, Opcode: {:?}, Current Memory Lane: {}, Stack: {:?}",
-    //     *ip_counter, opcode, current_memory_lane, stack
-    // );
-
     let memory_lane = memory_lanes
         .get_mut(*current_memory_lane as usize)
         .ok_or("Invalid memory lane")?;

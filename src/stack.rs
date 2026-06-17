@@ -32,6 +32,10 @@ impl Stack {
         self.get(self.size() - 1)
     }
 
+    pub fn as_slice(&self) -> &[i64] {
+        &self.inner
+    }
+
     pub(crate) fn rotate_left_once_last_n(&mut self, n: usize) -> Result<(), String> {
         if n < 2 {
             return Err("Rotate requires n >= 2".to_string());

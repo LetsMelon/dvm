@@ -28,4 +28,12 @@ impl<'a> Program<'a> {
     pub fn get_opcodes(&self) -> &[Opcode] {
         self.opcodes
     }
+
+    pub fn get_ip_counter(&self) -> usize {
+        self.ip_counter
+    }
+
+    pub fn get_current_opcode(&self) -> Option<&Opcode> {
+        self.opcodes.get(self.ip_counter)
+    }
 }

@@ -1,4 +1,4 @@
-use std::{env, fs, process::ExitCode, time::SystemTime};
+use std::{env, fs, io, process::ExitCode, time::SystemTime};
 
 use dvm::{memory_lane::MemoryLane, opcode::Opcode, program::Program, vm::Vm};
 
@@ -8,6 +8,14 @@ Usage:
   dvm run <program.dvm>
   dvm run --perf <program.dvm>
   dvm debug <program.dvm>
+";
+
+const DEBUG_HELP: &str = "\
+n, next           execute the next opcode
+ip                print the current instruction pointer
+e, execute OPCODE execute a custom opcode instead of the next one
+s, stack.         print the current stack
+h, help           print this help message
 ";
 
 fn load_opcodes(path: &str) -> Result<Vec<Opcode>, String> {
@@ -96,6 +104,100 @@ fn run_program(path: &str, perf: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn prompt_debug_command() -> Result<Option<String>, String> {
+    println!("Please select: n/ip/e/s/h");
+
+    let mut input = String::new();
+    let bytes = io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| format!("failed to read stdin: {e}"))?;
+
+    if bytes == 0 {
+        return Ok(None);
+    }
+
+    Ok(Some(input.trim().to_string()))
+}
+
+fn debug_program(path: &str) -> Result<(), String> {
+    let mut heap_memory_lane = [0; 1024];
+    let io_memory_lane = include_bytes!("../test.txt");
+
+    let memory_lanes = [
+        MemoryLane::ReadWrite(&mut heap_memory_lane),
+        MemoryLane::ReadOnly(io_memory_lane),
+    ];
+
+    let mut vm = Vm::new(Box::new(memory_lanes));
+    let opcodes = load_opcodes(path)?;
+    let mut program = Program::new(&opcodes);
+
+    loop {
+        if program.is_outside_program() {
+            break;
+        }
+
+        let ip = program.get_ip_counter();
+        let opcode = program
+            .get_current_opcode()
+            .ok_or_else(|| "instruction pointer out of bounds".to_string())?;
+
+        loop {
+            println!("{ip} {opcode:?}");
+
+            let Some(command) = prompt_debug_command()? else {
+                return Ok(());
+            };
+
+            match command.as_str() {
+                "n" | "next" => {
+                    vm.step(&mut program)
+                        .map_err(|e| format!("runtime error: {e}"))?;
+                    break;
+                }
+                "ip" => {
+                    println!("IP: {}", program.get_ip_counter());
+                }
+                "s" | "stack" | "stac" => {
+                    println!("Stack: {:?}", vm.get_stack());
+                }
+                "h" | "help" => {
+                    print!("{DEBUG_HELP}");
+                }
+                _ => {
+                    if let Some(rest) = command.strip_prefix("e ") {
+                        match serde_plain::from_str::<Opcode>(rest) {
+                            Ok(opcode) => {
+                                vm.execute_opcode(&mut program, &opcode)
+                                    .map_err(|e| format!("runtime error: {e}"))?;
+                                break;
+                            }
+                            Err(e) => {
+                                println!("Invalid opcode: {e}");
+                            }
+                        }
+                    } else if let Some(rest) = command.strip_prefix("execute ") {
+                        match serde_plain::from_str::<Opcode>(rest) {
+                            Ok(opcode) => {
+                                vm.execute_opcode(&mut program, &opcode)
+                                    .map_err(|e| format!("runtime error: {e}"))?;
+                                break;
+                            }
+                            Err(e) => {
+                                println!("Invalid opcode: {e}");
+                            }
+                        }
+                    } else {
+                        println!("Unknown command");
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn parse_run_args(args: &[String]) -> Result<(bool, &str), String> {
     match args {
         [path] => Ok((false, path.as_str())),
@@ -119,10 +221,7 @@ fn main() -> ExitCode {
         [command, rest @ ..] if command == "run" => {
             parse_run_args(rest).and_then(|(perf, path)| run_program(path, perf))
         }
-        [command, path] if command == "debug" => {
-            let _ = path;
-            todo!("debug CLI not implemented yet")
-        }
+        [command, path] if command == "debug" => debug_program(path),
         _ => Err(format!("unknown arguments\n\n{HELP}")),
     };
 
