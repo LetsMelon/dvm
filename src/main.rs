@@ -1,4 +1,8 @@
-use std::{env, fs, io, process::ExitCode, time::SystemTime};
+use std::{
+    env, fs, io,
+    process::{ExitCode, exit},
+    time::SystemTime,
+};
 
 use dvm::{memory_lane::MemoryLane, opcode::Opcode, program::Program, vm::Vm};
 
@@ -68,10 +72,8 @@ fn run_program(path: &str, perf: bool) -> Result<(), String> {
             return Err(format!("runtime error: {e}"));
         }
 
-        if let Ok(finish) = step_result
-            && finish
-        {
-            break;
+        if let Ok(Some(finish)) = step_result {
+            exit(finish)
         }
 
         if program.is_outside_program() {

@@ -169,5 +169,5 @@ Add
 Print
 PushIntermediate 10
 Print
-PushIntermediate 1000
-Jump
+PushIntermediate 0
+Halt

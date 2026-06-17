@@ -1,9 +1,4 @@
-use crate::{
-    memory_lane::MemoryLane,
-    opcode::Opcode,
-    program::Program,
-    stack::Stack,
-};
+use crate::{memory_lane::MemoryLane, opcode::Opcode, program::Program, stack::Stack};
 
 pub struct Vm<'a> {
     op_counter: u64,
@@ -20,7 +15,7 @@ impl<'a> Vm<'a> {
         }
     }
 
-    pub fn step<'b>(&mut self, program: &mut Program<'b>) -> Result<bool, String> {
+    pub fn step<'b>(&mut self, program: &mut Program<'b>) -> Result<Option<i32>, String> {
         self.op_counter += 1;
 
         step(program, &mut self.stack, &mut self.memory_lanes)
@@ -30,7 +25,7 @@ impl<'a> Vm<'a> {
         &mut self,
         program: &mut Program<'b>,
         opcode: &Opcode,
-    ) -> Result<bool, String> {
+    ) -> Result<Option<i32>, String> {
         self.op_counter += 1;
         execute_opcode(
             opcode,
@@ -55,7 +50,7 @@ fn step(
     program: &mut Program<'_>,
     stack: &mut Stack,
     memory_lanes: &mut [MemoryLane],
-) -> Result<bool, String> {
+) -> Result<Option<i32>, String> {
     let opcode = program
         .opcodes
         .get(program.ip_counter)
@@ -79,7 +74,7 @@ fn execute_opcode(
     current_memory_lane: &mut u8,
     stack: &mut Stack,
     memory_lanes: &mut [MemoryLane],
-) -> Result<bool, String> {
+) -> Result<Option<i32>, String> {
     let memory_lane = memory_lanes
         .get_mut(*current_memory_lane as usize)
         .ok_or("Invalid memory lane")?;
@@ -257,11 +252,15 @@ fn execute_opcode(
             *ip_counter += 1;
         }
         Opcode::Jump => {
-            let delta_address = stack.pop()? as i64;
+            let delta_address = stack.pop()?;
             // TODO add check if we have have a ip counter that is negative
             *ip_counter = ((*ip_counter as i64) + delta_address + 1) as usize;
         }
+        Opcode::Halt => {
+            let exit_code = stack.pop()?;
+            return Ok(Some(exit_code as i32));
+        }
     }
 
-    Ok(false)
+    Ok(None)
 }

@@ -37,6 +37,7 @@ pub enum Opcode {
     /// Pops a delta from the stack and jumps to that opcode unconditionally
     Jump,
     OperationCounter,
+    Halt,
 }
 
 impl fmt::Debug for Opcode {
@@ -72,6 +73,7 @@ impl fmt::Display for Opcode {
             Opcode::PrintN => write!(f, "PrintN"),
             Opcode::Jump => write!(f, "Jump"),
             Opcode::OperationCounter => write!(f, "OperationCounter"),
+            Opcode::Halt => write!(f, "Halt"),
         }
     }
 }
@@ -125,6 +127,7 @@ impl FromStr for Opcode {
             "PrintN" => Opcode::PrintN,
             "Jump" => Opcode::Jump,
             "OperationCounter" => Opcode::OperationCounter,
+            "Halt" => Opcode::Halt,
             _ => return Err(format!("unknown opcode: {opcode}")),
         };
 
