@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     env, fs, io,
     process::{ExitCode, exit},
     time::SystemTime,
@@ -18,9 +19,13 @@ const DEBUG_HELP: &str = "\
 n, next           execute the next opcode
 ip                print the current instruction pointer
 e, execute OPCODE execute a custom opcode instead of the next one
-s, stack.         print the current stack
+r, run            run until the next breakpoint should get executed
+br, break IP      break at the instruction pointer, call again with the same IP to remove
+s, stack          print the current stack
 h, help           print this help message
 ";
+
+const DEBUG_HELPER_STRING: &str = "Please select: n/ip/e/r/br/s/h";
 
 fn load_opcodes(path: &str) -> Result<Vec<Opcode>, String> {
     let source =
@@ -107,7 +112,7 @@ fn run_program(path: &str, perf: bool) -> Result<(), String> {
 }
 
 fn prompt_debug_command() -> Result<Option<String>, String> {
-    println!("Please select: n/ip/e/s/h");
+    println!("{}", DEBUG_HELPER_STRING);
 
     let mut input = String::new();
     let bytes = io::stdin()
@@ -134,63 +139,99 @@ fn debug_program(path: &str) -> Result<(), String> {
     let opcodes = load_opcodes(path)?;
     let mut program = Program::new(&opcodes);
 
+    let mut break_points = HashSet::new();
+    let mut running = false;
+
     loop {
         if program.is_outside_program() {
             break;
         }
 
         let ip = program.get_ip_counter();
-        let opcode = program
-            .get_current_opcode()
-            .ok_or_else(|| "instruction pointer out of bounds".to_string())?;
 
-        loop {
-            println!("{ip} {opcode:?}");
+        if break_points.contains(&ip) && running {
+            running = false;
+        } else if running {
+            if let Some(status_code) = vm
+                .step(&mut program)
+                .map_err(|e| format!("runtime error: {e}"))?
+            {
+                exit(status_code);
+            }
+        } else {
+            let opcode = program
+                .get_current_opcode()
+                .ok_or_else(|| "instruction pointer out of bounds".to_string())?;
 
-            let Some(command) = prompt_debug_command()? else {
-                return Ok(());
-            };
+            loop {
+                println!("{ip} {:?}", &opcode);
 
-            match command.as_str() {
-                "n" | "next" => {
-                    vm.step(&mut program)
-                        .map_err(|e| format!("runtime error: {e}"))?;
-                    break;
-                }
-                "ip" => {
-                    println!("IP: {}", program.get_ip_counter());
-                }
-                "s" | "stack" | "stac" => {
-                    println!("Stack: {:?}", vm.get_stack());
-                }
-                "h" | "help" => {
-                    print!("{DEBUG_HELP}");
-                }
-                _ => {
-                    if let Some(rest) = command.strip_prefix("e ") {
-                        match serde_plain::from_str::<Opcode>(rest) {
-                            Ok(opcode) => {
-                                vm.execute_opcode(&mut program, &opcode)
-                                    .map_err(|e| format!("runtime error: {e}"))?;
-                                break;
-                            }
-                            Err(e) => {
-                                println!("Invalid opcode: {e}");
-                            }
+                let Some(command) = prompt_debug_command()? else {
+                    return Ok(());
+                };
+
+                match command.as_str() {
+                    "n" | "next" => {
+                        if let Some(status_code) = vm
+                            .step(&mut program)
+                            .map_err(|e| format!("runtime error: {e}"))?
+                        {
+                            exit(status_code);
                         }
-                    } else if let Some(rest) = command.strip_prefix("execute ") {
-                        match serde_plain::from_str::<Opcode>(rest) {
-                            Ok(opcode) => {
-                                vm.execute_opcode(&mut program, &opcode)
-                                    .map_err(|e| format!("runtime error: {e}"))?;
-                                break;
+
+                        break;
+                    }
+                    "ip" => {
+                        println!("IP: {}", program.get_ip_counter());
+                    }
+                    "s" | "stack" | "stac" => {
+                        println!("Stack: {:?}", vm.get_stack());
+                    }
+                    "h" | "help" => {
+                        print!("{DEBUG_HELP}");
+                    }
+                    "r" | "run" => {
+                        running = true;
+                        break;
+                    }
+                    _ => {
+                        if let Some(rest) = command
+                            .strip_prefix("e")
+                            .or_else(|| command.strip_prefix("execute"))
+                            .map(|item| item.trim())
+                        {
+                            match serde_plain::from_str::<Opcode>(rest) {
+                                Ok(opcode) => {
+                                    vm.execute_opcode(&mut program, &opcode)
+                                        .map_err(|e| format!("runtime error: {e}"))?;
+                                    break;
+                                }
+                                Err(e) => {
+                                    println!("Invalid opcode: {e}");
+                                }
                             }
-                            Err(e) => {
-                                println!("Invalid opcode: {e}");
+                        } else if let Some(rest) = command
+                            .strip_prefix("br")
+                            .or_else(|| command.strip_prefix("break"))
+                            .map(|item| item.trim())
+                        {
+                            match serde_plain::from_str::<usize>(rest) {
+                                Ok(break_point) => {
+                                    if break_points.contains(&break_point) {
+                                        break_points.remove(&break_point);
+                                        println!("Removed breakpoint at ip={break_point}");
+                                    } else {
+                                        break_points.insert(break_point);
+                                        println!("Set breakpoint at ip={break_point}");
+                                    }
+                                }
+                                Err(e) => {
+                                    println!("Invalid ip for breakpoint: {e}")
+                                }
                             }
+                        } else {
+                            println!("Unknown command");
                         }
-                    } else {
-                        println!("Unknown command");
                     }
                 }
             }
