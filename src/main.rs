@@ -22,10 +22,11 @@ e, execute OPCODE execute a custom opcode instead of the next one
 r, run            run until the next breakpoint should get executed
 br, break IP      break at the instruction pointer, call again with the same IP to remove
 s, stack          print the current stack
+q, quit           quits the debugger
 h, help           print this help message
 ";
 
-const DEBUG_HELPER_STRING: &str = "Please select: n/ip/e/r/br/s/h";
+const DEBUG_HELPER_STRING: &str = "Please select: n/ip/e/r/br/s/q/h";
 
 fn load_opcodes(path: &str) -> Result<Vec<Opcode>, String> {
     let source =
@@ -193,6 +194,9 @@ fn debug_program(path: &str) -> Result<(), String> {
                     "r" | "run" => {
                         running = true;
                         break;
+                    }
+                    "q" | "quit" => {
+                        exit(1);
                     }
                     _ => {
                         if let Some(rest) = command
