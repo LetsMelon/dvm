@@ -2,6 +2,7 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as DeError};
 
+#[derive(Clone, PartialEq, Eq)]
 pub enum Opcode {
     /// Pops an address from the stack, reads one byte from the current memory lane, and pushes it
     Read,

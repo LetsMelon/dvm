@@ -8,15 +8,17 @@ PushIntermediate 1
 SwitchMemoryLane
 SizeOfMemoryLane
 Zero
+
+.scan_check
 PushIntermediate 2
 DupN
 GreaterThan
-PushIntermediate 4
-JumpIfTrue
+JumpIfTrue .scan_body
 Pop
 Pop
-PushIntermediate 107
-Jump
+Jump .emit_init
+
+.scan_body
 Dup
 Read
 PushIntermediate -54
@@ -68,10 +70,12 @@ Swap
 PushIntermediate 9
 Xor
 Not
-PushIntermediate 43
-Jump
-PushIntermediate 11
-JumpIfTrue
+Jump .reduce_separator_flags
+
+.separator_decision
+JumpIfTrue .separator_branch
+
+.advance_index
 PushIntermediate 0
 SwitchMemoryLane
 Zero
@@ -81,21 +85,22 @@ PushIntermediate 1
 SwitchMemoryLane
 PushIntermediate 1
 Add
-PushIntermediate -75
-Jump
+Jump .scan_check
+
+.separator_branch
 PushIntermediate 0
 SwitchMemoryLane
 Zero
 Read
 Not
-PushIntermediate 6
-JumpIfTrue
+JumpIfTrue .start_word
 PushIntermediate 1
 SwitchMemoryLane
 PushIntermediate 1
 Add
-PushIntermediate -88
-Jump
+Jump .scan_check
+
+.start_word
 PushIntermediate 0
 PushIntermediate 3
 Swap
@@ -111,8 +116,9 @@ PushIntermediate 1
 SwitchMemoryLane
 PushIntermediate 1
 Add
-PushIntermediate -105
-Jump
+Jump .scan_check
+
+.reduce_separator_flags
 Or
 Or
 Or
@@ -124,18 +130,21 @@ PushIntermediate 0
 PushIntermediate 2
 Swap
 Jump
+
+.emit_init
 Zero
 PushIntermediate 0
 PushIntermediate 2
 Swap
+
+.emit_tens_loop
 Dup
 PushIntermediate 10
 PushIntermediate 0
 PushIntermediate 2
 Swap
 GreaterThan
-PushIntermediate 15
-JumpIfTrue
+JumpIfTrue .emit_ones
 PushIntermediate 10
 Noop
 Noop
@@ -149,21 +158,24 @@ Add
 PushIntermediate 1
 PushIntermediate 2
 Swap
-PushIntermediate -23
-Jump
+Jump .emit_tens_loop
+
+.emit_ones
 PushIntermediate 0
 PushIntermediate 2
 Swap
 Dup
 Not
-PushIntermediate 5
-JumpIfTrue
+JumpIfTrue .emit_zero_ones
 PushIntermediate 48
 Add
 Print
-PushIntermediate 1
-Jump
+Jump .emit_newline
+
+.emit_zero_ones
 Pop
+
+.emit_newline
 PushIntermediate 48
 Add
 Print

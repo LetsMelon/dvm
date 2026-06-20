@@ -5,7 +5,7 @@ use std::{
     time::SystemTime,
 };
 
-use dvm::{memory_lane::MemoryLane, opcode::Opcode, program::Program, vm::Vm};
+use dvm::{frontend, memory_lane::MemoryLane, opcode::Opcode, program::Program, vm::Vm};
 
 const HELP: &str = "\
 Usage:
@@ -18,6 +18,7 @@ Usage:
 const DEBUG_HELP: &str = "\
 n, next           execute the next opcode
 ip                print the current instruction pointer
+ops               print all opcodes with their instruction pointers
 e, execute OPCODE execute a custom opcode instead of the next one
 r, run            run until the next breakpoint should get executed
 br, break IP      break at the instruction pointer, call again with the same IP to remove
@@ -26,34 +27,13 @@ q, quit           quits the debugger
 h, help           print this help message
 ";
 
-const DEBUG_HELPER_STRING: &str = "Please select: n/ip/e/r/br/s/q/h";
+const DEBUG_HELPER_STRING: &str = "Please select: n/ip/ops/e/r/br/s/q/h";
 
 fn load_opcodes(path: &str) -> Result<Vec<Opcode>, String> {
     let source =
         fs::read_to_string(path).map_err(|e| format!("could not read program file {path}: {e}"))?;
 
-    let mut opcodes = Vec::new();
-    for (line_no, raw_line) in source.lines().enumerate() {
-        let mut line = raw_line;
-        if let Some(comment_idx) = line.find("//") {
-            line = &line[0..comment_idx];
-        }
-
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        let opcode = serde_plain::from_str::<Opcode>(line)
-            .map_err(|e| format!("{path}:{}: {e}", line_no + 1))?;
-        opcodes.push(opcode);
-    }
-
-    if opcodes.is_empty() {
-        return Err(format!("program file {path} did not contain any opcodes"));
-    }
-
-    Ok(opcodes)
+    frontend::compile_source(path, &source)
 }
 
 fn run_program(path: &str, perf: bool) -> Result<i32, String> {
@@ -129,6 +109,12 @@ fn prompt_debug_command() -> Result<Option<String>, String> {
     Ok(Some(input.trim().to_string()))
 }
 
+fn print_opcodes(opcodes: &[Opcode]) {
+    for (ip, opcode) in opcodes.iter().enumerate() {
+        println!("{ip}\t{:?}", opcode);
+    }
+}
+
 fn debug_program(path: &str) -> Result<(), String> {
     let mut heap_memory_lane = [0; 1024];
     let io_memory_lane = include_bytes!("../test.txt");
@@ -186,6 +172,9 @@ fn debug_program(path: &str) -> Result<(), String> {
                     }
                     "ip" => {
                         println!("IP: {}", program.get_ip_counter());
+                    }
+                    "ops" => {
+                        print_opcodes(&opcodes);
                     }
                     "s" | "stack" | "stac" => {
                         println!("Stack: {:?}", vm.get_stack());
@@ -267,12 +256,12 @@ fn main() -> ExitCode {
             print!("{HELP}");
             Ok(())
         }
-        [command, rest @ ..] if command == "run" => match parse_run_args(rest)
-            .and_then(|(perf, path)| run_program(path, perf))
-        {
-            Ok(status_code) => exit(status_code),
-            Err(err) => Err(err),
-        },
+        [command, rest @ ..] if command == "run" => {
+            match parse_run_args(rest).and_then(|(perf, path)| run_program(path, perf)) {
+                Ok(status_code) => exit(status_code),
+                Err(err) => Err(err),
+            }
+        }
         [command, path] if command == "debug" => debug_program(path),
         _ => Err(format!("unknown arguments\n\n{HELP}")),
     };
