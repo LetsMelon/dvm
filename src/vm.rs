@@ -18,7 +18,12 @@ impl<'a> Vm<'a> {
     pub fn step<'b>(&mut self, program: &mut Program<'b>) -> Result<Option<i32>, String> {
         self.op_counter += 1;
 
-        step(program, &mut self.stack, &mut self.memory_lanes)
+        step(
+            program,
+            self.op_counter,
+            &mut self.stack,
+            &mut self.memory_lanes,
+        )
     }
 
     pub fn execute_opcode<'b>(
@@ -29,6 +34,7 @@ impl<'a> Vm<'a> {
         self.op_counter += 1;
         execute_opcode(
             opcode,
+            self.op_counter,
             &mut program.ip_counter,
             &mut program.current_memory_lane,
             &mut self.stack,
@@ -48,6 +54,7 @@ impl<'a> Vm<'a> {
 #[inline]
 fn step(
     program: &mut Program<'_>,
+    op_counter: u64,
     stack: &mut Stack,
     memory_lanes: &mut [MemoryLane],
 ) -> Result<Option<i32>, String> {
@@ -60,6 +67,7 @@ fn step(
 
     execute_opcode(
         opcode,
+        op_counter,
         &mut program.ip_counter,
         &mut program.current_memory_lane,
         stack,
@@ -70,6 +78,7 @@ fn step(
 #[inline]
 fn execute_opcode(
     opcode: &Opcode,
+    op_counter: u64,
     ip_counter: &mut usize,
     current_memory_lane: &mut u8,
     stack: &mut Stack,
@@ -200,13 +209,67 @@ fn execute_opcode(
         Opcode::Sub => {
             let a = stack.pop()?;
             let b = stack.pop()?;
-            stack.push(a.wrapping_sub(b));
+            stack.push(b.wrapping_sub(a));
+            *ip_counter += 1;
+        }
+        Opcode::Mul => {
+            let a = stack.pop()?;
+            let b = stack.pop()?;
+            stack.push(a.wrapping_mul(b));
+            *ip_counter += 1;
+        }
+        Opcode::Div => {
+            let a = stack.pop()?;
+            let b = stack.pop()?;
+            stack.push(b.wrapping_div(a));
+            *ip_counter += 1;
+        }
+        Opcode::Mod => {
+            let a = stack.pop()?;
+            let b = stack.pop()?;
+            stack.push(b % a);
+            *ip_counter += 1;
+        }
+        Opcode::ShiftLeft => {
+            let a = stack.pop()?;
+            let b = stack.pop()?;
+            stack.push(b << a);
+            *ip_counter += 1;
+        }
+        Opcode::ShiftRight => {
+            let a = stack.pop()?;
+            let b = stack.pop()?;
+            stack.push(b >> a);
             *ip_counter += 1;
         }
         Opcode::SmallerThan => {
             let a = stack.pop()?;
             let b = stack.pop()?;
-            stack.push((a < b) as i64);
+            stack.push((b < a) as i64);
+            *ip_counter += 1;
+        }
+        Opcode::SmallerOrEqual => {
+            let a = stack.pop()?;
+            let b = stack.pop()?;
+            stack.push((b <= a) as i64);
+            *ip_counter += 1;
+        }
+        Opcode::Equal => {
+            let a = stack.pop()?;
+            let b = stack.pop()?;
+            stack.push((a == b) as i64);
+            *ip_counter += 1;
+        }
+        Opcode::GreaterThan => {
+            let a = stack.pop()?;
+            let b = stack.pop()?;
+            stack.push((b > a) as i64);
+            *ip_counter += 1;
+        }
+        Opcode::GreaterOrEqual => {
+            let a = stack.pop()?;
+            let b = stack.pop()?;
+            stack.push((b >= a) as i64);
             *ip_counter += 1;
         }
         Opcode::JumpIfTrue => {
@@ -248,7 +311,7 @@ fn execute_opcode(
             *ip_counter += 1;
         }
         Opcode::OperationCounter => {
-            stack.push(*ip_counter as i64);
+            stack.push(op_counter as i64);
             *ip_counter += 1;
         }
         Opcode::Jump => {

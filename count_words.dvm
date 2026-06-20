@@ -10,7 +10,7 @@ SizeOfMemoryLane
 Zero
 PushIntermediate 2
 DupN
-SmallerThan
+GreaterThan
 PushIntermediate 4
 JumpIfTrue
 Pop
@@ -133,13 +133,13 @@ PushIntermediate 10
 PushIntermediate 0
 PushIntermediate 2
 Swap
-SmallerThan
+GreaterThan
 PushIntermediate 15
 JumpIfTrue
 PushIntermediate 10
-PushIntermediate 0
-PushIntermediate 2
-Swap
+Noop
+Noop
+Noop
 Sub
 PushIntermediate 0
 PushIntermediate 2

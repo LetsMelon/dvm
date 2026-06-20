@@ -56,7 +56,7 @@ fn load_opcodes(path: &str) -> Result<Vec<Opcode>, String> {
     Ok(opcodes)
 }
 
-fn run_program(path: &str, perf: bool) -> Result<(), String> {
+fn run_program(path: &str, perf: bool) -> Result<i32, String> {
     let mut heap_memory_lane = [0; 1024];
     let io_memory_lane = include_bytes!("../test.txt");
 
@@ -68,6 +68,7 @@ fn run_program(path: &str, perf: bool) -> Result<(), String> {
     let mut vm = Vm::new(Box::new(memory_lanes));
     let opcodes = load_opcodes(path)?;
     let mut program = Program::new(&opcodes);
+    let mut exit_code = 0;
 
     let start = SystemTime::now();
 
@@ -79,7 +80,8 @@ fn run_program(path: &str, perf: bool) -> Result<(), String> {
         }
 
         if let Ok(Some(finish)) = step_result {
-            exit(finish)
+            exit_code = finish;
+            break;
         }
 
         if program.is_outside_program() {
@@ -109,7 +111,7 @@ fn run_program(path: &str, perf: bool) -> Result<(), String> {
         }
     }
 
-    Ok(())
+    Ok(exit_code)
 }
 
 fn prompt_debug_command() -> Result<Option<String>, String> {
@@ -265,9 +267,12 @@ fn main() -> ExitCode {
             print!("{HELP}");
             Ok(())
         }
-        [command, rest @ ..] if command == "run" => {
-            parse_run_args(rest).and_then(|(perf, path)| run_program(path, perf))
-        }
+        [command, rest @ ..] if command == "run" => match parse_run_args(rest)
+            .and_then(|(perf, path)| run_program(path, perf))
+        {
+            Ok(status_code) => exit(status_code),
+            Err(err) => Err(err),
+        },
         [command, path] if command == "debug" => debug_program(path),
         _ => Err(format!("unknown arguments\n\n{HELP}")),
     };
