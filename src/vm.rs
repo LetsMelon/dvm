@@ -92,7 +92,7 @@ fn execute_opcode(
         Opcode::Read => {
             let address = i32_to_usize(stack.pop_i32()?, "Read address")?;
             let value = memory_lane.read(address)?;
-            stack.push_i32(i32::from(value));
+            stack.push_i32(i32::from(value))?;
             *ip_counter += 1;
         }
         Opcode::Write => {
@@ -112,7 +112,7 @@ fn execute_opcode(
         Opcode::SizeOfMemoryLane => {
             let size = i32::try_from(memory_lane.size())
                 .map_err(|_| "Memory lane size exceeds i32 range".to_string())?;
-            stack.push_i32(size);
+            stack.push_i32(size)?;
             *ip_counter += 1;
         }
         Opcode::Noop => {
@@ -128,7 +128,7 @@ fn execute_opcode(
         }
         Opcode::Dup => {
             let value = stack.peek_i32()?;
-            stack.push_i32(value);
+            stack.push_i32(value)?;
             *ip_counter += 1;
         }
         Opcode::DupN => {
@@ -144,7 +144,7 @@ fn execute_opcode(
 
             for i in 0..n {
                 let value = stack.get_i32(len - n + i)?;
-                stack.push_i32(value);
+                stack.push_i32(value)?;
             }
 
             *ip_counter += 1;
@@ -176,99 +176,99 @@ fn execute_opcode(
         Opcode::I32Xor => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32(a ^ b);
+            stack.push_i32(a ^ b)?;
             *ip_counter += 1;
         }
         Opcode::I32And => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32(((a != 0) && (b != 0)) as i32);
+            stack.push_i32(((a != 0) && (b != 0)) as i32)?;
             *ip_counter += 1;
         }
         Opcode::I32Or => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32(((a != 0) || (b != 0)) as i32);
+            stack.push_i32(((a != 0) || (b != 0)) as i32)?;
             *ip_counter += 1;
         }
         Opcode::I32Zero => {
-            stack.push_i32(0);
+            stack.push_i32(0)?;
             *ip_counter += 1;
         }
         Opcode::I32Push(value) => {
-            stack.push_i32(*value);
+            stack.push_i32(*value)?;
             *ip_counter += 1;
         }
         Opcode::I32Add => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32(a.wrapping_add(b));
+            stack.push_i32(a.wrapping_add(b))?;
             *ip_counter += 1;
         }
         Opcode::I32Sub => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32(b.wrapping_sub(a));
+            stack.push_i32(b.wrapping_sub(a))?;
             *ip_counter += 1;
         }
         Opcode::I32Mul => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32(a.wrapping_mul(b));
+            stack.push_i32(a.wrapping_mul(b))?;
             *ip_counter += 1;
         }
         Opcode::I32Div => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32(b.wrapping_div(a));
+            stack.push_i32(b.wrapping_div(a))?;
             *ip_counter += 1;
         }
         Opcode::I32Mod => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32(b % a);
+            stack.push_i32(b % a)?;
             *ip_counter += 1;
         }
         Opcode::I32Shl => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32(b << a);
+            stack.push_i32(b << a)?;
             *ip_counter += 1;
         }
         Opcode::I32Shr => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32(b >> a);
+            stack.push_i32(b >> a)?;
             *ip_counter += 1;
         }
         Opcode::I32Lt => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32((b < a) as i32);
+            stack.push_i32((b < a) as i32)?;
             *ip_counter += 1;
         }
         Opcode::I32Le => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32((b <= a) as i32);
+            stack.push_i32((b <= a) as i32)?;
             *ip_counter += 1;
         }
         Opcode::I32Eq => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32((a == b) as i32);
+            stack.push_i32((a == b) as i32)?;
             *ip_counter += 1;
         }
         Opcode::I32Gt => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32((b > a) as i32);
+            stack.push_i32((b > a) as i32)?;
             *ip_counter += 1;
         }
         Opcode::I32Ge => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
-            stack.push_i32((b >= a) as i32);
+            stack.push_i32((b >= a) as i32)?;
             *ip_counter += 1;
         }
         Opcode::JumpIfTrue => {
@@ -282,7 +282,7 @@ fn execute_opcode(
         }
         Opcode::I32Not => {
             let value = stack.pop_i32()?;
-            stack.push_i32((value == 0) as i32);
+            stack.push_i32((value == 0) as i32)?;
             *ip_counter += 1;
         }
         Opcode::Print => {
@@ -311,7 +311,7 @@ fn execute_opcode(
         Opcode::OperationCounter => {
             let counter = i32::try_from(op_counter)
                 .map_err(|_| "Operation counter exceeds i32 range".to_string())?;
-            stack.push_i32(counter);
+            stack.push_i32(counter)?;
             *ip_counter += 1;
         }
         Opcode::Jump => {
