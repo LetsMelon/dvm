@@ -5,6 +5,14 @@ use crate::{memory_lane::MemoryLane, opcode::Opcode, program::Program, stack::St
 type ExternalFunction<'memory> =
     dyn for<'ctx, 'code> FnMut(ExternalFunctionArgs<'ctx, 'code, 'memory>) -> Result<(), String>;
 
+macro_rules! opcode_handler {
+    (fn $name:ident $(<$($generic:tt),*>)? ($($arg:ident : $ty:ty),* $(,)?) -> $ret:ty $body:block) => {
+        #[cfg_attr(feature = "profiling", inline(never))]
+        #[cfg_attr(not(feature = "profiling"), inline(always))]
+        fn $name $(<$($generic),*>)? ($($arg: $ty),*) -> $ret $body
+    };
+}
+
 pub struct Vm<'a> {
     op_counter: u64,
     stack: Stack,
@@ -134,262 +142,547 @@ fn execute_opcode<'memory>(
     external_functions: &mut HashMap<&'static str, Box<ExternalFunction<'memory>>>,
 ) -> Result<Option<i32>, String> {
     match opcode {
-        Opcode::Read => {
-            let memory_lane = current_memory_lane_mut(memory_lanes, program.current_memory_lane)?;
-            let address = i32_to_usize(stack.pop_i32()?, "Read address")?;
-            let value = memory_lane.read(address)?;
-            stack.push_i32(i32::from(value))?;
-            program.ip_counter += 1;
-        }
-        Opcode::Write => {
-            let memory_lane = current_memory_lane_mut(memory_lanes, program.current_memory_lane)?;
-            let address = i32_to_usize(stack.pop_i32()?, "Write address")?;
-            let value = stack.pop_i32()?;
-            if let MemoryLane::ReadWrite(slice) = memory_lane {
-                slice[address] = (value & 0xFF) as u8;
-            } else {
-                return Err("Cannot write to read-only memory lane".into());
-            }
-            program.ip_counter += 1;
-        }
-        Opcode::SwitchMemoryLane => {
-            program.current_memory_lane = i32_to_u8(stack.pop_i32()?, "Memory lane index")?;
-            program.ip_counter += 1;
-        }
-        Opcode::SizeOfMemoryLane => {
-            let memory_lane = current_memory_lane_mut(memory_lanes, program.current_memory_lane)?;
-            let size = i32::try_from(memory_lane.size())
-                .map_err(|_| "Memory lane size exceeds i32 range".to_string())?;
-            stack.push_i32(size)?;
-            program.ip_counter += 1;
-        }
-        Opcode::Noop => {
-            program.ip_counter += 1;
-        }
-        Opcode::Pop => {
-            let _ = stack.pop_i32()?;
-            program.ip_counter += 1;
-        }
-        Opcode::Pop32bits => {
-            let mut bytes = [0; 4];
-            stack.pop_bytes(&mut bytes)?;
-            program.ip_counter += 1;
-        }
-        Opcode::Dup => {
-            let value = stack.peek_i32()?;
-            stack.push_i32(value)?;
-            program.ip_counter += 1;
-        }
-        Opcode::DupN => {
-            let n = i32_to_usize(stack.pop_i32()?, "DupN count")?;
-            if n == 0 {
-                return Err("DupN requires n >= 1".into());
-            }
-
-            let len = stack.len_i32s()?;
-            if n > len {
-                return Err("Stack underflow".into());
-            }
-
-            for i in 0..n {
-                let value = stack.get_i32(len - n + i)?;
-                stack.push_i32(value)?;
-            }
-
-            program.ip_counter += 1;
-        }
-        Opcode::Swap => {
-            let n = i32_to_usize(stack.pop_i32()?, "Swap count")?;
-            if n < 2 {
-                return Err("Swap requires n >= 2".into());
-            }
-
-            let direction = stack.pop_i32()?;
-            let len = stack.len_i32s()?;
-            if n > len {
-                return Err("Stack underflow".into());
-            }
-
-            match direction {
-                0 => stack.rotate_left_once_last_n_i32(n)?,
-                1 => {
-                    for _ in 0..(n - 1) {
-                        stack.rotate_left_once_last_n_i32(n)?;
-                    }
-                }
-                _ => return Err("Swap direction must be 0 (left) or 1 (right)".into()),
-            }
-
-            program.ip_counter += 1;
-        }
-        Opcode::I32Xor => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32(a ^ b)?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32And => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32(((a != 0) && (b != 0)) as i32)?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Or => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32(((a != 0) || (b != 0)) as i32)?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Zero => {
-            stack.push_i32(0)?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Push(value) => {
-            stack.push_i32(*value)?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Add => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32(a.wrapping_add(b))?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Sub => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32(b.wrapping_sub(a))?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Mul => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32(a.wrapping_mul(b))?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Div => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32(b.wrapping_div(a))?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Mod => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32(b % a)?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Shl => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32(b << a)?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Shr => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32(b >> a)?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Lt => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32((b < a) as i32)?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Le => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32((b <= a) as i32)?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Eq => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32((a == b) as i32)?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Gt => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32((b > a) as i32)?;
-            program.ip_counter += 1;
-        }
-        Opcode::I32Ge => {
-            let a = stack.pop_i32()?;
-            let b = stack.pop_i32()?;
-            stack.push_i32((b >= a) as i32)?;
-            program.ip_counter += 1;
-        }
-        Opcode::JumpIfTrue => {
-            let delta_address = stack.pop_i32()?;
-            let condition = stack.pop_i32()?;
-            if condition != 0 {
-                advance_ip_relative(&mut program.ip_counter, delta_address)?;
-            } else {
-                program.ip_counter += 1;
-            }
-        }
-        Opcode::I32Not => {
-            let value = stack.pop_i32()?;
-            stack.push_i32((value == 0) as i32)?;
-            program.ip_counter += 1;
-        }
-        Opcode::Print => {
-            let value = stack.pop_i32()?;
-            print!("{}", value as u8 as char);
-            program.ip_counter += 1;
-        }
-        Opcode::PrintN => {
-            let size = i32_to_usize(stack.pop_i32()?, "PrintN size")?;
-            let len = stack.len_i32s()?;
-            if size > len {
-                return Err("Stack underflow".into());
-            }
-
-            for i in 0..size {
-                let value = stack.get_i32(len - size + i)?;
-                print!("{}", value as u8 as char);
-            }
-
-            for _ in 0..size {
-                stack.pop_i32()?;
-            }
-
-            program.ip_counter += 1;
-        }
-        Opcode::OperationCounter => {
-            let counter = i32::try_from(op_counter)
-                .map_err(|_| "Operation counter exceeds i32 range".to_string())?;
-            stack.push_i32(counter)?;
-            program.ip_counter += 1;
-        }
-        Opcode::Jump => {
-            let delta_address = stack.pop_i32()?;
-            advance_ip_relative(&mut program.ip_counter, delta_address)?;
-        }
-        Opcode::Halt => {
-            let exit_code = stack.pop_i32()?;
-            return Ok(Some(exit_code));
-        }
-        Opcode::CallExternal(function_name) => {
-            let fct = external_functions.get_mut(function_name).ok_or_else(|| {
-                format!(
-                    "Could not get the external function by name: '{}'",
-                    function_name
-                )
-            })?;
-
-            fct(ExternalFunctionArgs {
-                program: &*program,
-                stack,
-                memory_lanes,
-            })?;
-
-            program.ip_counter += 1;
-        }
+        Opcode::Read => execute_read(program, stack, memory_lanes),
+        Opcode::Write => execute_write(program, stack, memory_lanes),
+        Opcode::SwitchMemoryLane => execute_switch_memory_lane(program, stack),
+        Opcode::SizeOfMemoryLane => execute_size_of_memory_lane(program, stack, memory_lanes),
+        Opcode::Noop => execute_noop(program),
+        Opcode::Pop => execute_pop(program, stack),
+        Opcode::Pop32bits => execute_pop32bits(program, stack),
+        Opcode::Dup => execute_dup(program, stack),
+        Opcode::DupN => execute_dup_n(program, stack),
+        Opcode::Swap => execute_swap(program, stack),
+        Opcode::I32Xor => execute_i32_xor(program, stack),
+        Opcode::I32And => execute_i32_and(program, stack),
+        Opcode::I32Or => execute_i32_or(program, stack),
+        Opcode::I32Zero => execute_i32_zero(program, stack),
+        Opcode::I32Push(value) => execute_i32_push(program, stack, *value),
+        Opcode::I32Add => execute_i32_add(program, stack),
+        Opcode::I32Sub => execute_i32_sub(program, stack),
+        Opcode::I32Mul => execute_i32_mul(program, stack),
+        Opcode::I32Div => execute_i32_div(program, stack),
+        Opcode::I32Mod => execute_i32_mod(program, stack),
+        Opcode::I32Shl => execute_i32_shl(program, stack),
+        Opcode::I32Shr => execute_i32_shr(program, stack),
+        Opcode::I32Lt => execute_i32_lt(program, stack),
+        Opcode::I32Le => execute_i32_le(program, stack),
+        Opcode::I32Eq => execute_i32_eq(program, stack),
+        Opcode::I32Gt => execute_i32_gt(program, stack),
+        Opcode::I32Ge => execute_i32_ge(program, stack),
+        Opcode::JumpIfTrue => execute_jump_if_true(program, stack),
+        Opcode::I32Not => execute_i32_not(program, stack),
+        Opcode::Print => execute_print(program, stack),
+        Opcode::PrintN => execute_print_n(program, stack),
+        Opcode::Jump => execute_jump(program, stack),
+        Opcode::OperationCounter => execute_operation_counter(program, stack, op_counter),
+        Opcode::Halt => execute_halt(stack),
+        Opcode::CallExternal(function_name) => execute_call_external(
+            program,
+            stack,
+            memory_lanes,
+            external_functions,
+            function_name,
+        ),
     }
+}
 
-    Ok(None)
+opcode_handler! {
+    fn execute_read<'memory>(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+        memory_lanes: &mut [MemoryLane<'memory>],
+    ) -> Result<Option<i32>, String> {
+        let memory_lane = current_memory_lane_mut(memory_lanes, program.current_memory_lane)?;
+        let address = i32_to_usize(stack.pop_i32()?, "Read address")?;
+        let value = memory_lane.read(address)?;
+        stack.push_i32(i32::from(value))?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_write<'memory>(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+        memory_lanes: &mut [MemoryLane<'memory>],
+    ) -> Result<Option<i32>, String> {
+        let memory_lane = current_memory_lane_mut(memory_lanes, program.current_memory_lane)?;
+        let address = i32_to_usize(stack.pop_i32()?, "Write address")?;
+        let value = stack.pop_i32()?;
+        if let MemoryLane::ReadWrite(slice) = memory_lane {
+            slice[address] = (value & 0xFF) as u8;
+        } else {
+            return Err("Cannot write to read-only memory lane".into());
+        }
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_switch_memory_lane(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        program.current_memory_lane = i32_to_u8(stack.pop_i32()?, "Memory lane index")?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_size_of_memory_lane<'memory>(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+        memory_lanes: &mut [MemoryLane<'memory>],
+    ) -> Result<Option<i32>, String> {
+        let memory_lane = current_memory_lane_mut(memory_lanes, program.current_memory_lane)?;
+        let size = i32::try_from(memory_lane.size())
+            .map_err(|_| "Memory lane size exceeds i32 range".to_string())?;
+        stack.push_i32(size)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_noop(program: &mut Program<'_>) -> Result<Option<i32>, String> {
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_pop(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let _ = stack.pop_i32()?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_pop32bits(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let mut bytes = [0; 4];
+        stack.pop_bytes(&mut bytes)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_dup(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let value = stack.peek_i32()?;
+        stack.push_i32(value)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_dup_n(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let n = i32_to_usize(stack.pop_i32()?, "DupN count")?;
+        if n == 0 {
+            return Err("DupN requires n >= 1".into());
+        }
+
+        let len = stack.len_i32s()?;
+        if n > len {
+            return Err("Stack underflow".into());
+        }
+
+        for i in 0..n {
+            let value = stack.get_i32(len - n + i)?;
+            stack.push_i32(value)?;
+        }
+
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_swap(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let n = i32_to_usize(stack.pop_i32()?, "Swap count")?;
+        if n < 2 {
+            return Err("Swap requires n >= 2".into());
+        }
+
+        let direction = stack.pop_i32()?;
+        let len = stack.len_i32s()?;
+        if n > len {
+            return Err("Stack underflow".into());
+        }
+
+        match direction {
+            0 => stack.rotate_left_once_last_n_i32(n)?,
+            1 => {
+                for _ in 0..(n - 1) {
+                    stack.rotate_left_once_last_n_i32(n)?;
+                }
+            }
+            _ => return Err("Swap direction must be 0 (left) or 1 (right)".into()),
+        }
+
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_xor(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32(a ^ b)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_and(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32(((a != 0) && (b != 0)) as i32)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_or(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32(((a != 0) || (b != 0)) as i32)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_zero(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        stack.push_i32(0)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_push(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+        value: i32,
+    ) -> Result<Option<i32>, String> {
+        stack.push_i32(value)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_add(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32(a.wrapping_add(b))?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_sub(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32(b.wrapping_sub(a))?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_mul(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32(a.wrapping_mul(b))?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_div(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32(b.wrapping_div(a))?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_mod(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32(b % a)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_shl(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32(b << a)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_shr(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32(b >> a)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_lt(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32((b < a) as i32)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_le(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32((b <= a) as i32)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_eq(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32((a == b) as i32)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_gt(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32((b > a) as i32)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_ge(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_i32()?;
+        let b = stack.pop_i32()?;
+        stack.push_i32((b >= a) as i32)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_jump_if_true(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let delta_address = stack.pop_i32()?;
+        let condition = stack.pop_i32()?;
+        if condition != 0 {
+            advance_ip_relative(&mut program.ip_counter, delta_address)?;
+        } else {
+            program.ip_counter += 1;
+        }
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_i32_not(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let value = stack.pop_i32()?;
+        stack.push_i32((value == 0) as i32)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_print(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let value = stack.pop_i32()?;
+        print!("{}", value as u8 as char);
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_print_n(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let size = i32_to_usize(stack.pop_i32()?, "PrintN size")?;
+        let len = stack.len_i32s()?;
+        if size > len {
+            return Err("Stack underflow".into());
+        }
+
+        for i in 0..size {
+            let value = stack.get_i32(len - size + i)?;
+            print!("{}", value as u8 as char);
+        }
+
+        for _ in 0..size {
+            stack.pop_i32()?;
+        }
+
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_operation_counter(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+        op_counter: u64,
+    ) -> Result<Option<i32>, String> {
+        let counter = i32::try_from(op_counter)
+            .map_err(|_| "Operation counter exceeds i32 range".to_string())?;
+        stack.push_i32(counter)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_jump(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let delta_address = stack.pop_i32()?;
+        advance_ip_relative(&mut program.ip_counter, delta_address)?;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_halt(stack: &mut Stack) -> Result<Option<i32>, String> {
+        let exit_code = stack.pop_i32()?;
+        Ok(Some(exit_code))
+    }
+}
+
+opcode_handler! {
+    fn execute_call_external<'memory>(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+        memory_lanes: &mut [MemoryLane<'memory>],
+        external_functions: &mut HashMap<&'static str, Box<ExternalFunction<'memory>>>,
+        function_name: &'static str,
+    ) -> Result<Option<i32>, String> {
+        let fct = external_functions.get_mut(function_name).ok_or_else(|| {
+            format!(
+                "Could not get the external function by name: '{}'",
+                function_name
+            )
+        })?;
+
+        fct(ExternalFunctionArgs {
+            program: &*program,
+            stack,
+            memory_lanes,
+        })?;
+
+        program.ip_counter += 1;
+        Ok(None)
+    }
 }
 
 fn i32_to_usize(value: i32, context: &str) -> Result<usize, String> {

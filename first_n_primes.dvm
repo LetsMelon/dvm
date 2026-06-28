@@ -1,5 +1,5 @@
-i32.PUSH 100 // config: how many primes to find
-i32.PUSH 100000000 // config: starting number to test
+i32.PUSH 1000 // config: how many primes to find
+i32.PUSH 150000000 // config: starting number to test
 
 .loop
 Dup

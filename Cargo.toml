@@ -3,6 +3,9 @@ name = "dvm"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+profiling = []
+
 [dependencies]
 serde = { version = "1.0.228", features = ["derive"] }
 serde_plain = "1.0.2"
