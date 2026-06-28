@@ -10,7 +10,7 @@ impl<'a> Vm<'a> {
     pub fn new(memory_lanes: Box<[MemoryLane<'a>]>) -> Self {
         Vm {
             op_counter: 0,
-            stack: Stack::new(128),
+            stack: Stack::new(1024),
             memory_lanes,
         }
     }
