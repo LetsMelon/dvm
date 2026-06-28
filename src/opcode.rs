@@ -38,9 +38,9 @@ pub enum Opcode {
     I32Eq,
     I32Gt,
     I32Ge,
+    I32Not,
     /// Pops a delta from the stack and jumps to that opcode if the next stack value is non-zero
     JumpIfTrue,
-    I32Not,
     Print,
     /// Pops n from the stack, prints the top n values as bytes, and removes them
     PrintN,
@@ -48,6 +48,7 @@ pub enum Opcode {
     Jump,
     OperationCounter,
     Halt,
+    CallExternal(&'static str),
 }
 
 impl fmt::Debug for Opcode {
@@ -86,13 +87,16 @@ impl fmt::Display for Opcode {
             Opcode::I32Eq => write!(f, "i32.EQ"),
             Opcode::I32Gt => write!(f, "i32.GT"),
             Opcode::I32Ge => write!(f, "i32.GE"),
-            Opcode::JumpIfTrue => write!(f, "JumpIfTrue"),
             Opcode::I32Not => write!(f, "i32.NOT"),
+            Opcode::JumpIfTrue => write!(f, "JumpIfTrue"),
             Opcode::Print => write!(f, "Print"),
             Opcode::PrintN => write!(f, "PrintN"),
             Opcode::Jump => write!(f, "Jump"),
             Opcode::OperationCounter => write!(f, "OperationCounter"),
             Opcode::Halt => write!(f, "Halt"),
+            Opcode::CallExternal(external_function) => {
+                write!(f, "CallExternal {external_function}")
+            }
         }
     }
 }
@@ -106,6 +110,14 @@ fn parse_i64(arg: Option<&str>, opcode: &str) -> Result<i64, String> {
 fn parse_i32(arg: Option<&str>, opcode: &str) -> Result<i32, String> {
     let value = parse_i64(arg, opcode)?;
     i32::try_from(value).map_err(|_| format!("argument for {opcode} is out of i32 range: {value}"))
+}
+
+fn parse_str(arg: Option<&str>, opcode: &str) -> Result<&'static str, String> {
+    let arg = arg.ok_or_else(|| format!("missing argument for {}", opcode))?;
+
+    // TODO do not leak memory here, for now this is fine because dvm is running only short programs, this can change in the future, e.g.: web server
+    let arg = arg.to_string();
+    Ok(arg.leak())
 }
 
 fn ensure_no_extra_args<'a>(
@@ -154,13 +166,14 @@ impl FromStr for Opcode {
             "i32.EQ" => Opcode::I32Eq,
             "i32.GT" => Opcode::I32Gt,
             "i32.GE" => Opcode::I32Ge,
-            "JumpIfTrue" => Opcode::JumpIfTrue,
             "i32.NOT" => Opcode::I32Not,
+            "JumpIfTrue" => Opcode::JumpIfTrue,
             "Print" => Opcode::Print,
             "PrintN" => Opcode::PrintN,
             "Jump" => Opcode::Jump,
             "OperationCounter" => Opcode::OperationCounter,
             "Halt" => Opcode::Halt,
+            "CallExternal" => Opcode::CallExternal(parse_str(parts.next(), opcode)?),
             _ => return Err(format!("unknown opcode: {opcode}")),
         };
 

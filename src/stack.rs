@@ -24,23 +24,25 @@ impl Stack {
         Ok(())
     }
 
-    pub fn pop_bytes(&mut self, len: usize) -> Result<Vec<u8>, String> {
-        if len > self.len {
+    pub fn pop_bytes(&mut self, out: &mut [u8]) -> Result<(), String> {
+        if out.len() > self.len {
             return Err("Stack underflow".to_string());
         }
 
-        let start = self.len - len;
-        let bytes = self.inner[start..self.len].to_vec();
+        let start = self.len - out.len();
+        out.copy_from_slice(&self.inner[start..self.len]);
         self.len = start;
-        Ok(bytes)
+        Ok(())
     }
 
-    pub fn peek_bytes(&self, len: usize) -> Result<Vec<u8>, String> {
-        if len > self.len {
+    pub fn peek_bytes(&self, out: &mut [u8]) -> Result<(), String> {
+        if out.len() > self.len {
             return Err("Stack underflow".to_string());
         }
 
-        Ok(self.inner[self.len - len..self.len].to_vec())
+        let start = self.len - out.len();
+        out.copy_from_slice(&self.inner[start..self.len]);
+        Ok(())
     }
 
     pub fn dump_bytes(&self) -> Vec<u8> {
@@ -52,17 +54,15 @@ impl Stack {
     }
 
     pub fn pop_i32(&mut self) -> Result<i32, String> {
-        let bytes = self.pop_bytes(4)?;
-        Ok(i32::from_le_bytes(
-            bytes.try_into().expect("len already checked"),
-        ))
+        let mut bytes = [0; 4];
+        self.pop_bytes(&mut bytes)?;
+        Ok(i32::from_le_bytes(bytes))
     }
 
     pub fn peek_i32(&self) -> Result<i32, String> {
-        let bytes = self.peek_bytes(4)?;
-        Ok(i32::from_le_bytes(
-            bytes.try_into().expect("len already checked"),
-        ))
+        let mut bytes = [0; 4];
+        self.peek_bytes(&mut bytes)?;
+        Ok(i32::from_le_bytes(bytes))
     }
 
     pub fn push_u8(&mut self, value: u8) -> Result<(), String> {
@@ -129,6 +129,7 @@ impl Stack {
         Ok(())
     }
 
+    #[inline]
     fn ensure_capacity_for(&self, additional: usize) -> Result<(), String> {
         let new_len = self
             .len
@@ -168,8 +169,12 @@ mod tests {
 
         stack.push_bytes(&[1, 2, 3, 4]).unwrap();
 
-        assert_eq!(stack.peek_bytes(3).unwrap(), vec![2, 3, 4]);
-        assert_eq!(stack.pop_bytes(4).unwrap(), vec![1, 2, 3, 4]);
+        let mut peeked = [0; 3];
+        stack.peek_bytes(&mut peeked).unwrap();
+        assert_eq!(peeked, [2, 3, 4]);
+        let mut bytes = [0; 4];
+        stack.pop_bytes(&mut bytes).unwrap();
+        assert_eq!(bytes, [1, 2, 3, 4]);
     }
 
     #[test]

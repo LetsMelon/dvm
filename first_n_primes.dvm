@@ -1,0 +1,82 @@
+i32.PUSH 100 // config: how many primes to find
+i32.PUSH 100000000 // config: starting number to test
+
+.loop
+Dup
+i32.PUSH 2
+i32.LT
+JumpIfTrue .composite
+
+Dup
+i32.PUSH 2
+i32.EQ
+JumpIfTrue .prime
+
+Dup
+i32.PUSH 2
+i32.MOD
+i32.ZERO
+i32.EQ
+JumpIfTrue .composite
+
+i32.PUSH 3 // divisor
+
+.divisor_loop
+i32.PUSH 2
+DupN // duplicate candidate and divisor
+i32.PUSH 1
+i32.PUSH 2
+Swap // reorder to call sqrt on the duplicated candidate
+CallExternal i32.SQRT
+i32.PUSH 1
+i32.PUSH 2
+Swap // compare sqrt(candidate) >= divisor
+i32.GE
+JumpIfTrue .check_divisor
+Pop // drop divisor
+Jump .prime
+
+.check_divisor
+i32.PUSH 2
+DupN // duplicate candidate and divisor
+i32.MOD
+i32.ZERO
+i32.EQ
+JumpIfTrue .composite_with_divisor
+
+i32.PUSH 2
+i32.ADD // divisor += 2
+Jump .divisor_loop
+
+.prime
+Dup
+CallExternal print
+
+i32.PUSH 1
+i32.PUSH 2
+Swap // [candidate, remaining]
+i32.PUSH 1
+i32.SUB // remaining -= 1
+Dup
+i32.ZERO
+i32.EQ
+JumpIfTrue .done
+i32.PUSH 1
+i32.PUSH 2
+Swap // [remaining, candidate]
+i32.PUSH 1
+i32.ADD // candidate += 1
+Jump .loop
+
+.composite_with_divisor
+Pop // drop divisor
+
+.composite
+i32.PUSH 1
+i32.ADD // candidate += 1
+Jump .loop
+
+.done
+Pop // drop remaining counter
+i32.PUSH 0
+Halt

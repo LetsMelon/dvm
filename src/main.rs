@@ -29,6 +29,22 @@ h, help           print this help message
 
 const DEBUG_HELPER_STRING: &str = "Please select: n/ip/ops/e/r/br/s/q/h";
 
+fn register_standard_external_functions(vm: &mut Vm<'_>) {
+    vm.register_external_function("print", |mut args| {
+        println!("{}", args.stack().pop_i32()?);
+        Ok(())
+    });
+
+    vm.register_external_function("i32.SQRT", |mut args| {
+        let value = args.stack().pop_i32()?;
+
+        let root = value.isqrt();
+        args.stack().push_i32(root)?;
+
+        Ok(())
+    });
+}
+
 fn load_opcodes(path: &str) -> Result<Vec<Opcode>, String> {
     let source =
         fs::read_to_string(path).map_err(|e| format!("could not read program file {path}: {e}"))?;
@@ -46,6 +62,8 @@ fn run_program(path: &str, perf: bool) -> Result<i32, String> {
     ];
 
     let mut vm = Vm::new(Box::new(memory_lanes));
+    register_standard_external_functions(&mut vm);
+
     let opcodes = load_opcodes(path)?;
     let mut program = Program::new(&opcodes);
     let mut exit_code = 0;
@@ -125,6 +143,7 @@ fn debug_program(path: &str) -> Result<(), String> {
     ];
 
     let mut vm = Vm::new(Box::new(memory_lanes));
+    register_standard_external_functions(&mut vm);
     let opcodes = load_opcodes(path)?;
     let mut program = Program::new(&opcodes);
 

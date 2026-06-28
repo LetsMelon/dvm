@@ -1,9 +1,47 @@
+use std::collections::HashMap;
+
 use crate::{memory_lane::MemoryLane, opcode::Opcode, program::Program, stack::Stack};
+
+type ExternalFunction<'memory> =
+    dyn for<'ctx, 'code> FnMut(ExternalFunctionArgs<'ctx, 'code, 'memory>) -> Result<(), String>;
 
 pub struct Vm<'a> {
     op_counter: u64,
     stack: Stack,
     memory_lanes: Box<[MemoryLane<'a>]>,
+    external_functions: HashMap<&'static str, Box<ExternalFunction<'a>>>,
+}
+
+pub struct ExternalFunctionArgs<'ctx, 'code, 'memory> {
+    program: &'ctx Program<'code>,
+    stack: &'ctx mut Stack,
+    memory_lanes: &'ctx mut [MemoryLane<'memory>],
+}
+
+impl<'ctx, 'code, 'memory> ExternalFunctionArgs<'ctx, 'code, 'memory> {
+    pub fn program(&self) -> &Program<'code> {
+        self.program
+    }
+
+    pub fn stack(&mut self) -> &mut Stack {
+        self.stack
+    }
+
+    pub fn memory_lanes(&mut self) -> &mut [MemoryLane<'memory>] {
+        self.memory_lanes
+    }
+
+    pub fn instruction_pointer(&self) -> usize {
+        self.program.ip_counter
+    }
+
+    pub fn current_memory_lane(&self) -> u8 {
+        self.program.current_memory_lane
+    }
+
+    pub fn current_opcode(&self) -> Option<&Opcode> {
+        self.program.get_current_opcode()
+    }
 }
 
 impl<'a> Vm<'a> {
@@ -12,6 +50,7 @@ impl<'a> Vm<'a> {
             op_counter: 0,
             stack: Stack::new(1024),
             memory_lanes,
+            external_functions: HashMap::new(),
         }
     }
 
@@ -23,6 +62,7 @@ impl<'a> Vm<'a> {
             self.op_counter,
             &mut self.stack,
             &mut self.memory_lanes,
+            &mut self.external_functions,
         )
     }
 
@@ -35,10 +75,10 @@ impl<'a> Vm<'a> {
         execute_opcode(
             opcode,
             self.op_counter,
-            &mut program.ip_counter,
-            &mut program.current_memory_lane,
+            program,
             &mut self.stack,
             &mut self.memory_lanes,
+            &mut self.external_functions,
         )
     }
 
@@ -49,14 +89,23 @@ impl<'a> Vm<'a> {
     pub fn get_stack_bytes(&self) -> Vec<u8> {
         self.stack.dump_bytes()
     }
+
+    pub fn register_external_function<F>(&mut self, name: &'static str, function: F)
+    where
+        F: for<'ctx, 'code> FnMut(ExternalFunctionArgs<'ctx, 'code, 'a>) -> Result<(), String>
+            + 'static,
+    {
+        self.external_functions.insert(name, Box::new(function));
+    }
 }
 
 #[inline]
-fn step(
+fn step<'memory>(
     program: &mut Program<'_>,
     op_counter: u64,
     stack: &mut Stack,
-    memory_lanes: &mut [MemoryLane],
+    memory_lanes: &mut [MemoryLane<'memory>],
+    external_functions: &mut HashMap<&'static str, Box<ExternalFunction<'memory>>>,
 ) -> Result<Option<i32>, String> {
     let opcode = program
         .opcodes
@@ -68,34 +117,32 @@ fn step(
     execute_opcode(
         opcode,
         op_counter,
-        &mut program.ip_counter,
-        &mut program.current_memory_lane,
+        program,
         stack,
         memory_lanes,
+        external_functions,
     )
 }
 
 #[inline]
-fn execute_opcode(
+fn execute_opcode<'memory>(
     opcode: &Opcode,
     op_counter: u64,
-    ip_counter: &mut usize,
-    current_memory_lane: &mut u8,
+    program: &mut Program<'_>,
     stack: &mut Stack,
-    memory_lanes: &mut [MemoryLane],
+    memory_lanes: &mut [MemoryLane<'memory>],
+    external_functions: &mut HashMap<&'static str, Box<ExternalFunction<'memory>>>,
 ) -> Result<Option<i32>, String> {
-    let memory_lane = memory_lanes
-        .get_mut(usize::from(*current_memory_lane))
-        .ok_or("Invalid memory lane")?;
-
     match opcode {
         Opcode::Read => {
+            let memory_lane = current_memory_lane_mut(memory_lanes, program.current_memory_lane)?;
             let address = i32_to_usize(stack.pop_i32()?, "Read address")?;
             let value = memory_lane.read(address)?;
             stack.push_i32(i32::from(value))?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::Write => {
+            let memory_lane = current_memory_lane_mut(memory_lanes, program.current_memory_lane)?;
             let address = i32_to_usize(stack.pop_i32()?, "Write address")?;
             let value = stack.pop_i32()?;
             if let MemoryLane::ReadWrite(slice) = memory_lane {
@@ -103,33 +150,35 @@ fn execute_opcode(
             } else {
                 return Err("Cannot write to read-only memory lane".into());
             }
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::SwitchMemoryLane => {
-            *current_memory_lane = i32_to_u8(stack.pop_i32()?, "Memory lane index")?;
-            *ip_counter += 1;
+            program.current_memory_lane = i32_to_u8(stack.pop_i32()?, "Memory lane index")?;
+            program.ip_counter += 1;
         }
         Opcode::SizeOfMemoryLane => {
+            let memory_lane = current_memory_lane_mut(memory_lanes, program.current_memory_lane)?;
             let size = i32::try_from(memory_lane.size())
                 .map_err(|_| "Memory lane size exceeds i32 range".to_string())?;
             stack.push_i32(size)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::Noop => {
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::Pop => {
             let _ = stack.pop_i32()?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::Pop32bits => {
-            let _ = stack.pop_bytes(4)?;
-            *ip_counter += 1;
+            let mut bytes = [0; 4];
+            stack.pop_bytes(&mut bytes)?;
+            program.ip_counter += 1;
         }
         Opcode::Dup => {
             let value = stack.peek_i32()?;
             stack.push_i32(value)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::DupN => {
             let n = i32_to_usize(stack.pop_i32()?, "DupN count")?;
@@ -147,7 +196,7 @@ fn execute_opcode(
                 stack.push_i32(value)?;
             }
 
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::Swap => {
             let n = i32_to_usize(stack.pop_i32()?, "Swap count")?;
@@ -171,124 +220,124 @@ fn execute_opcode(
                 _ => return Err("Swap direction must be 0 (left) or 1 (right)".into()),
             }
 
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Xor => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32(a ^ b)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32And => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32(((a != 0) && (b != 0)) as i32)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Or => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32(((a != 0) || (b != 0)) as i32)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Zero => {
             stack.push_i32(0)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Push(value) => {
             stack.push_i32(*value)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Add => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32(a.wrapping_add(b))?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Sub => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32(b.wrapping_sub(a))?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Mul => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32(a.wrapping_mul(b))?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Div => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32(b.wrapping_div(a))?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Mod => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32(b % a)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Shl => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32(b << a)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Shr => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32(b >> a)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Lt => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32((b < a) as i32)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Le => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32((b <= a) as i32)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Eq => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32((a == b) as i32)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Gt => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32((b > a) as i32)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::I32Ge => {
             let a = stack.pop_i32()?;
             let b = stack.pop_i32()?;
             stack.push_i32((b >= a) as i32)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::JumpIfTrue => {
             let delta_address = stack.pop_i32()?;
             let condition = stack.pop_i32()?;
             if condition != 0 {
-                advance_ip_relative(ip_counter, delta_address)?;
+                advance_ip_relative(&mut program.ip_counter, delta_address)?;
             } else {
-                *ip_counter += 1;
+                program.ip_counter += 1;
             }
         }
         Opcode::I32Not => {
             let value = stack.pop_i32()?;
             stack.push_i32((value == 0) as i32)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::Print => {
             let value = stack.pop_i32()?;
             print!("{}", value as u8 as char);
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::PrintN => {
             let size = i32_to_usize(stack.pop_i32()?, "PrintN size")?;
@@ -306,21 +355,37 @@ fn execute_opcode(
                 stack.pop_i32()?;
             }
 
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::OperationCounter => {
             let counter = i32::try_from(op_counter)
                 .map_err(|_| "Operation counter exceeds i32 range".to_string())?;
             stack.push_i32(counter)?;
-            *ip_counter += 1;
+            program.ip_counter += 1;
         }
         Opcode::Jump => {
             let delta_address = stack.pop_i32()?;
-            advance_ip_relative(ip_counter, delta_address)?;
+            advance_ip_relative(&mut program.ip_counter, delta_address)?;
         }
         Opcode::Halt => {
             let exit_code = stack.pop_i32()?;
             return Ok(Some(exit_code));
+        }
+        Opcode::CallExternal(function_name) => {
+            let fct = external_functions.get_mut(function_name).ok_or_else(|| {
+                format!(
+                    "Could not get the external function by name: '{}'",
+                    function_name
+                )
+            })?;
+
+            fct(ExternalFunctionArgs {
+                program: &*program,
+                stack,
+                memory_lanes,
+            })?;
+
+            program.ip_counter += 1;
         }
     }
 
@@ -333,6 +398,15 @@ fn i32_to_usize(value: i32, context: &str) -> Result<usize, String> {
 
 fn i32_to_u8(value: i32, context: &str) -> Result<u8, String> {
     u8::try_from(value).map_err(|_| format!("{context} must fit into u8"))
+}
+
+fn current_memory_lane_mut<'ctx, 'memory>(
+    memory_lanes: &'ctx mut [MemoryLane<'memory>],
+    current_memory_lane: u8,
+) -> Result<&'ctx mut MemoryLane<'memory>, String> {
+    memory_lanes
+        .get_mut(usize::from(current_memory_lane))
+        .ok_or("Invalid memory lane".to_string())
 }
 
 fn advance_ip_relative(ip_counter: &mut usize, delta: i32) -> Result<(), String> {
@@ -405,5 +479,44 @@ Halt
         );
 
         assert_eq!(exit_code, 7);
+    }
+
+    #[test]
+    fn calls_registered_external_function() {
+        let mut heap_memory_lane = [0; 128];
+        let io_memory_lane = *b"";
+        let memory_lanes = [
+            MemoryLane::ReadWrite(&mut heap_memory_lane),
+            MemoryLane::ReadOnly(&io_memory_lane),
+        ];
+
+        let opcodes = compile_source(
+            "<test>",
+            "\
+i32.PUSH 41
+CallExternal add_one
+Halt
+",
+        )
+        .unwrap();
+        let mut program = Program::new(&opcodes);
+        let mut vm = Vm::new(Box::new(memory_lanes));
+        vm.register_external_function("add_one", |mut args| {
+            let value = args.stack().pop_i32()?;
+            args.stack().push_i32(value + 1)?;
+            Ok(())
+        });
+
+        let exit_code = loop {
+            if let Some(code) = vm.step(&mut program).unwrap() {
+                break code;
+            }
+
+            if program.is_outside_program() {
+                panic!("program terminated without Halt");
+            }
+        };
+
+        assert_eq!(exit_code, 42);
     }
 }
