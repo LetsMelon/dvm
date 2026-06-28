@@ -9,14 +9,15 @@ use self::{
     assembler::assemble_ir,
     ir::lower_to_ir,
     parser::parse_source,
-    passes::{noop::NoopOptimizationPass, optimize_ir},
+    passes::{constant_fold_math::ConstantFoldMathPass, noop::NoopOptimizationPass, optimize_ir},
 };
 
 pub fn compile_source(path: &str, source: &str) -> Result<Vec<Opcode>, String> {
     let parsed = parse_source(path, source)?;
     let mut ir = lower_to_ir(path, parsed)?;
+    let fold_math = ConstantFoldMathPass;
     let noop = NoopOptimizationPass;
-    optimize_ir(&mut ir, &[&noop])?;
+    optimize_ir(&mut ir, &[&fold_math, &noop])?;
     assemble_ir(path, &ir)
 }
 
@@ -112,30 +113,6 @@ Halt
         let error = compile_source("<test>", ".dangling\n").unwrap_err();
 
         assert!(error.contains("label .dangling does not point to an instruction"));
-    }
-
-    #[test]
-    fn preserves_numeric_programs() {
-        let opcodes = compile_source(
-            "<test>",
-            "\
-PushIntermediate 3
-PushIntermediate 4
-Sub
-Halt
-",
-        )
-        .unwrap();
-
-        assert_eq!(
-            opcodes,
-            vec![
-                Opcode::PushIntermediate(3),
-                Opcode::PushIntermediate(4),
-                Opcode::Sub,
-                Opcode::Halt
-            ]
-        );
     }
 
     #[test]

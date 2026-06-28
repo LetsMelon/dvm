@@ -1,3 +1,4 @@
+pub mod constant_fold_math;
 pub mod noop;
 
 use super::ir::IrProgram;
