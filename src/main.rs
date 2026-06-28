@@ -177,7 +177,7 @@ fn debug_program(path: &str) -> Result<(), String> {
                         print_opcodes(&opcodes);
                     }
                     "s" | "stack" | "stac" => {
-                        println!("Stack: {:?}", vm.get_stack());
+                        println!("Stack bytes: {:?}", vm.get_stack_bytes());
                     }
                     "h" | "help" => {
                         print!("{DEBUG_HELP}");

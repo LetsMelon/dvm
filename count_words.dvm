@@ -1,18 +1,18 @@
-PushIntermediate 0
+i32.PUSH 0
 SwitchMemoryLane
-Zero
-Zero
+i32.ZERO
+i32.ZERO
 Write
-Zero
-PushIntermediate 1
+i32.ZERO
+i32.PUSH 1
 SwitchMemoryLane
 SizeOfMemoryLane
-Zero
+i32.ZERO
 
 .scan_check
-PushIntermediate 2
+i32.PUSH 2
 DupN
-GreaterThan
+i32.GT
 JumpIfTrue .scan_body
 Pop
 Pop
@@ -21,154 +21,154 @@ Jump .emit_init
 .scan_body
 Dup
 Read
-PushIntermediate -54
-PushIntermediate 1
-PushIntermediate 2
+i32.PUSH -54
+i32.PUSH 1
+i32.PUSH 2
 Swap
 Dup
-PushIntermediate 32
-Xor
-Not
-PushIntermediate 1
-PushIntermediate 2
+i32.PUSH 32
+i32.XOR
+i32.NOT
+i32.PUSH 1
+i32.PUSH 2
 Swap
 Dup
-PushIntermediate 44
-Xor
-Not
-PushIntermediate 1
-PushIntermediate 2
+i32.PUSH 44
+i32.XOR
+i32.NOT
+i32.PUSH 1
+i32.PUSH 2
 Swap
 Dup
-PushIntermediate 33
-Xor
-Not
-PushIntermediate 1
-PushIntermediate 2
+i32.PUSH 33
+i32.XOR
+i32.NOT
+i32.PUSH 1
+i32.PUSH 2
 Swap
 Dup
-PushIntermediate 46
-Xor
-Not
-PushIntermediate 1
-PushIntermediate 2
+i32.PUSH 46
+i32.XOR
+i32.NOT
+i32.PUSH 1
+i32.PUSH 2
 Swap
 Dup
-PushIntermediate 10
-Xor
-Not
-PushIntermediate 1
-PushIntermediate 2
+i32.PUSH 10
+i32.XOR
+i32.NOT
+i32.PUSH 1
+i32.PUSH 2
 Swap
 Dup
-PushIntermediate 13
-Xor
-Not
-PushIntermediate 1
-PushIntermediate 2
+i32.PUSH 13
+i32.XOR
+i32.NOT
+i32.PUSH 1
+i32.PUSH 2
 Swap
-PushIntermediate 9
-Xor
-Not
+i32.PUSH 9
+i32.XOR
+i32.NOT
 Jump .reduce_separator_flags
 
 .separator_decision
 JumpIfTrue .separator_branch
 
 .advance_index
-PushIntermediate 0
+i32.PUSH 0
 SwitchMemoryLane
-Zero
-Zero
+i32.ZERO
+i32.ZERO
 Write
-PushIntermediate 1
+i32.PUSH 1
 SwitchMemoryLane
-PushIntermediate 1
-Add
+i32.PUSH 1
+i32.ADD
 Jump .scan_check
 
 .separator_branch
-PushIntermediate 0
+i32.PUSH 0
 SwitchMemoryLane
-Zero
+i32.ZERO
 Read
-Not
+i32.NOT
 JumpIfTrue .start_word
-PushIntermediate 1
+i32.PUSH 1
 SwitchMemoryLane
-PushIntermediate 1
-Add
+i32.PUSH 1
+i32.ADD
 Jump .scan_check
 
 .start_word
-PushIntermediate 0
-PushIntermediate 3
+i32.PUSH 0
+i32.PUSH 3
 Swap
-PushIntermediate 1
-Add
-PushIntermediate 1
-PushIntermediate 3
+i32.PUSH 1
+i32.ADD
+i32.PUSH 1
+i32.PUSH 3
 Swap
-PushIntermediate 1
-Zero
+i32.PUSH 1
+i32.ZERO
 Write
-PushIntermediate 1
+i32.PUSH 1
 SwitchMemoryLane
-PushIntermediate 1
-Add
+i32.PUSH 1
+i32.ADD
 Jump .scan_check
 
 .reduce_separator_flags
-Or
-Or
-Or
-Or
-Or
-Or
-Not
-PushIntermediate 0
-PushIntermediate 2
+i32.OR
+i32.OR
+i32.OR
+i32.OR
+i32.OR
+i32.OR
+i32.NOT
+i32.PUSH 0
+i32.PUSH 2
 Swap
 Jump
 
 .emit_init
-Zero
-PushIntermediate 0
-PushIntermediate 2
+i32.ZERO
+i32.PUSH 0
+i32.PUSH 2
 Swap
 
 .emit_tens_loop
 Dup
-PushIntermediate 10
-PushIntermediate 0
-PushIntermediate 2
+i32.PUSH 10
+i32.PUSH 0
+i32.PUSH 2
 Swap
-GreaterThan
+i32.GT
 JumpIfTrue .emit_ones
-PushIntermediate 10
+i32.PUSH 10
 Noop
 Noop
 Noop
-Sub
-PushIntermediate 0
-PushIntermediate 2
+i32.SUB
+i32.PUSH 0
+i32.PUSH 2
 Swap
-PushIntermediate 1
-Add
-PushIntermediate 1
-PushIntermediate 2
+i32.PUSH 1
+i32.ADD
+i32.PUSH 1
+i32.PUSH 2
 Swap
 Jump .emit_tens_loop
 
 .emit_ones
-PushIntermediate 0
-PushIntermediate 2
+i32.PUSH 0
+i32.PUSH 2
 Swap
 Dup
-Not
+i32.NOT
 JumpIfTrue .emit_zero_ones
-PushIntermediate 48
-Add
+i32.PUSH 48
+i32.ADD
 Print
 Jump .emit_newline
 
@@ -176,10 +176,10 @@ Jump .emit_newline
 Pop
 
 .emit_newline
-PushIntermediate 48
-Add
+i32.PUSH 48
+i32.ADD
 Print
-PushIntermediate 10
+i32.PUSH 10
 Print
-PushIntermediate 0
+i32.PUSH 0
 Halt

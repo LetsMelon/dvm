@@ -49,7 +49,7 @@ mod tests {
             "<test>",
             "\
 Jump .done
-Zero
+i32.ZERO
 .done
 Halt
 ",
@@ -59,9 +59,9 @@ Halt
         assert_eq!(
             opcodes,
             vec![
-                Opcode::PushIntermediate(1),
+                Opcode::I32Push(1),
                 Opcode::Jump,
-                Opcode::Zero,
+                Opcode::I32Zero,
                 Opcode::Halt
             ]
         );
@@ -73,7 +73,7 @@ Halt
             "<test>",
             "\
 .loop
-Zero
+i32.ZERO
 Jump .loop
 ",
         )
@@ -81,7 +81,7 @@ Jump .loop
 
         assert_eq!(
             opcodes,
-            vec![Opcode::Zero, Opcode::PushIntermediate(-3), Opcode::Jump]
+            vec![Opcode::I32Zero, Opcode::I32Push(-3), Opcode::Jump]
         );
     }
 
@@ -91,7 +91,7 @@ Jump .loop
             "<test>",
             "\
 .loop
-Zero
+i32.ZERO
 .loop
 Halt
 ",
@@ -121,7 +121,7 @@ Halt
             "<test>",
             "\
 .loop
-Zero
+i32.ZERO
 Jump .loop
 ",
         )
@@ -152,7 +152,7 @@ Jump .loop
         optimize_ir(&mut ir, &[&pass]).unwrap();
         let opcodes = assemble_ir("<test>", &ir).unwrap();
 
-        assert_eq!(opcodes, vec![Opcode::PushIntermediate(-2), Opcode::Jump]);
+        assert_eq!(opcodes, vec![Opcode::I32Push(-2), Opcode::Jump]);
     }
 
     #[test]
@@ -160,7 +160,7 @@ Jump .loop
         let parsed = parse_source(
             "<test>",
             "\
-Zero
+i32.ZERO
 .done
 Halt
 ",

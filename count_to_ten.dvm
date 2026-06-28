@@ -1,12 +1,12 @@
-Zero // initial counter = 0
+i32.ZERO // initial counter = 0
 
 .loop
 Dup // keep one copy of the counter for the equality check
-PushIntermediate 10 // target value
-Equal // true once the counter reached 10
+i32.PUSH 10 // target value
+i32.EQ // true once the counter reached 10
 JumpIfTrue .done // stop counting when the counter is 10
-PushIntermediate 1 // increment step
-Add // counter = counter + 1
+i32.PUSH 1 // increment step
+i32.ADD // counter = counter + 1
 Jump .loop // continue counting
 
 .done

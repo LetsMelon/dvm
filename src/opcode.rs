@@ -19,28 +19,28 @@ pub enum Opcode {
     DupN,
     /// Pops n, then direction (0 = left, 1 = right), and rotates the top n stack values once
     Swap,
-    Xor,
+    I32Xor,
     /// Pops the top two values and pushes 1 if both are non-zero, otherwise 0
-    And,
+    I32And,
     /// Pops the top two values and pushes 1 if either is non-zero, otherwise 0
-    Or,
-    Zero,
-    PushIntermediate(i64),
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    ShiftLeft,
-    ShiftRight,
-    SmallerThan,
-    SmallerOrEqual,
-    Equal,
-    GreaterThan,
-    GreaterOrEqual,
+    I32Or,
+    I32Zero,
+    I32Push(i32),
+    I32Add,
+    I32Sub,
+    I32Mul,
+    I32Div,
+    I32Mod,
+    I32Shl,
+    I32Shr,
+    I32Lt,
+    I32Le,
+    I32Eq,
+    I32Gt,
+    I32Ge,
     /// Pops a delta from the stack and jumps to that opcode if the next stack value is non-zero
     JumpIfTrue,
-    Not,
+    I32Not,
     Print,
     /// Pops n from the stack, prints the top n values as bytes, and removes them
     PrintN,
@@ -69,25 +69,25 @@ impl fmt::Display for Opcode {
             Opcode::Dup => write!(f, "Dup"),
             Opcode::DupN => write!(f, "DupN"),
             Opcode::Swap => write!(f, "Swap"),
-            Opcode::Xor => write!(f, "Xor"),
-            Opcode::And => write!(f, "And"),
-            Opcode::Or => write!(f, "Or"),
-            Opcode::Zero => write!(f, "Zero"),
-            Opcode::PushIntermediate(value) => write!(f, "PushIntermediate {value}"),
-            Opcode::Add => write!(f, "Add"),
-            Opcode::Sub => write!(f, "Sub"),
-            Opcode::Mul => write!(f, "Mul"),
-            Opcode::Div => write!(f, "Div"),
-            Opcode::Mod => write!(f, "Mod"),
-            Opcode::ShiftLeft => write!(f, "ShiftLeft"),
-            Opcode::ShiftRight => write!(f, "ShiftRight"),
-            Opcode::SmallerThan => write!(f, "SmallerThan"),
-            Opcode::SmallerOrEqual => write!(f, "SmallerOrEqual"),
-            Opcode::Equal => write!(f, "Equal"),
-            Opcode::GreaterThan => write!(f, "GreaterThan"),
-            Opcode::GreaterOrEqual => write!(f, "GreaterOrEqual"),
+            Opcode::I32Xor => write!(f, "i32.XOR"),
+            Opcode::I32And => write!(f, "i32.AND"),
+            Opcode::I32Or => write!(f, "i32.OR"),
+            Opcode::I32Zero => write!(f, "i32.ZERO"),
+            Opcode::I32Push(value) => write!(f, "i32.PUSH {value}"),
+            Opcode::I32Add => write!(f, "i32.ADD"),
+            Opcode::I32Sub => write!(f, "i32.SUB"),
+            Opcode::I32Mul => write!(f, "i32.MUL"),
+            Opcode::I32Div => write!(f, "i32.DIV"),
+            Opcode::I32Mod => write!(f, "i32.MOD"),
+            Opcode::I32Shl => write!(f, "i32.SHL"),
+            Opcode::I32Shr => write!(f, "i32.SHR"),
+            Opcode::I32Lt => write!(f, "i32.LT"),
+            Opcode::I32Le => write!(f, "i32.LE"),
+            Opcode::I32Eq => write!(f, "i32.EQ"),
+            Opcode::I32Gt => write!(f, "i32.GT"),
+            Opcode::I32Ge => write!(f, "i32.GE"),
             Opcode::JumpIfTrue => write!(f, "JumpIfTrue"),
-            Opcode::Not => write!(f, "Not"),
+            Opcode::I32Not => write!(f, "i32.NOT"),
             Opcode::Print => write!(f, "Print"),
             Opcode::PrintN => write!(f, "PrintN"),
             Opcode::Jump => write!(f, "Jump"),
@@ -101,6 +101,11 @@ fn parse_i64(arg: Option<&str>, opcode: &str) -> Result<i64, String> {
     let arg = arg.ok_or_else(|| format!("missing argument for {opcode}"))?;
     arg.parse::<i64>()
         .map_err(|e| format!("invalid argument for {opcode}: {e}"))
+}
+
+fn parse_i32(arg: Option<&str>, opcode: &str) -> Result<i32, String> {
+    let value = parse_i64(arg, opcode)?;
+    i32::try_from(value).map_err(|_| format!("argument for {opcode} is out of i32 range: {value}"))
 }
 
 fn ensure_no_extra_args<'a>(
@@ -132,25 +137,25 @@ impl FromStr for Opcode {
             "Dup" => Opcode::Dup,
             "DupN" => Opcode::DupN,
             "Swap" => Opcode::Swap,
-            "Xor" => Opcode::Xor,
-            "And" => Opcode::And,
-            "Or" => Opcode::Or,
-            "Zero" => Opcode::Zero,
-            "PushIntermediate" => Opcode::PushIntermediate(parse_i64(parts.next(), opcode)?),
-            "Add" => Opcode::Add,
-            "Sub" => Opcode::Sub,
-            "Mul" => Opcode::Mul,
-            "Div" => Opcode::Div,
-            "Mod" => Opcode::Mod,
-            "ShiftLeft" => Opcode::ShiftLeft,
-            "ShiftRight" => Opcode::ShiftRight,
-            "SmallerThan" => Opcode::SmallerThan,
-            "SmallerOrEqual" => Opcode::SmallerOrEqual,
-            "Equal" => Opcode::Equal,
-            "GreaterThan" => Opcode::GreaterThan,
-            "GreaterOrEqual" => Opcode::GreaterOrEqual,
+            "i32.XOR" => Opcode::I32Xor,
+            "i32.AND" => Opcode::I32And,
+            "i32.OR" => Opcode::I32Or,
+            "i32.ZERO" => Opcode::I32Zero,
+            "i32.PUSH" => Opcode::I32Push(parse_i32(parts.next(), opcode)?),
+            "i32.ADD" => Opcode::I32Add,
+            "i32.SUB" => Opcode::I32Sub,
+            "i32.MUL" => Opcode::I32Mul,
+            "i32.DIV" => Opcode::I32Div,
+            "i32.MOD" => Opcode::I32Mod,
+            "i32.SHL" => Opcode::I32Shl,
+            "i32.SHR" => Opcode::I32Shr,
+            "i32.LT" => Opcode::I32Lt,
+            "i32.LE" => Opcode::I32Le,
+            "i32.EQ" => Opcode::I32Eq,
+            "i32.GT" => Opcode::I32Gt,
+            "i32.GE" => Opcode::I32Ge,
             "JumpIfTrue" => Opcode::JumpIfTrue,
-            "Not" => Opcode::Not,
+            "i32.NOT" => Opcode::I32Not,
             "Print" => Opcode::Print,
             "PrintN" => Opcode::PrintN,
             "Jump" => Opcode::Jump,
@@ -180,5 +185,27 @@ impl<'de> Deserialize<'de> for Opcode {
     {
         let s = String::deserialize(deserializer)?;
         s.parse().map_err(D::Error::custom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Opcode;
+
+    #[test]
+    fn parses_typed_i32_opcodes() {
+        assert_eq!("i32.ZERO".parse::<Opcode>().unwrap(), Opcode::I32Zero);
+        assert_eq!("i32.ADD".parse::<Opcode>().unwrap(), Opcode::I32Add);
+        assert_eq!(
+            "i32.PUSH -12".parse::<Opcode>().unwrap(),
+            Opcode::I32Push(-12)
+        );
+    }
+
+    #[test]
+    fn rejects_legacy_i32_opcode_spellings() {
+        assert!("Zero".parse::<Opcode>().is_err());
+        assert!("Add".parse::<Opcode>().is_err());
+        assert!("PushIntermediate 3".parse::<Opcode>().is_err());
     }
 }

@@ -46,8 +46,8 @@ impl<'a> Vm<'a> {
         self.op_counter
     }
 
-    pub fn get_stack(&self) -> &[i64] {
-        self.stack.as_slice()
+    pub fn get_stack_bytes(&self) -> Vec<u8> {
+        self.stack.dump_bytes()
     }
 }
 
@@ -85,88 +85,87 @@ fn execute_opcode(
     memory_lanes: &mut [MemoryLane],
 ) -> Result<Option<i32>, String> {
     let memory_lane = memory_lanes
-        .get_mut(*current_memory_lane as usize)
+        .get_mut(usize::from(*current_memory_lane))
         .ok_or("Invalid memory lane")?;
 
     match opcode {
         Opcode::Read => {
-            let address = stack.pop()? as usize;
-            let value = memory_lane.read(address)? as i64;
-            stack.push(value as i64);
+            let address = i32_to_usize(stack.pop_i32()?, "Read address")?;
+            let value = memory_lane.read(address)?;
+            stack.push_i32(i32::from(value));
             *ip_counter += 1;
         }
         Opcode::Write => {
-            let address = stack.pop()? as usize;
-            let value = stack.pop()?;
+            let address = i32_to_usize(stack.pop_i32()?, "Write address")?;
+            let value = stack.pop_i32()?;
             if let MemoryLane::ReadWrite(slice) = memory_lane {
-                let value_byte = (value & 0xFF) as u8;
-                slice[address] = value_byte;
+                slice[address] = (value & 0xFF) as u8;
             } else {
                 return Err("Cannot write to read-only memory lane".into());
             }
             *ip_counter += 1;
         }
         Opcode::SwitchMemoryLane => {
-            *current_memory_lane = stack.pop()? as u8;
+            *current_memory_lane = i32_to_u8(stack.pop_i32()?, "Memory lane index")?;
             *ip_counter += 1;
         }
         Opcode::SizeOfMemoryLane => {
-            stack.push(memory_lane.size() as i64);
+            let size = i32::try_from(memory_lane.size())
+                .map_err(|_| "Memory lane size exceeds i32 range".to_string())?;
+            stack.push_i32(size);
             *ip_counter += 1;
         }
         Opcode::Noop => {
             *ip_counter += 1;
         }
         Opcode::Pop => {
-            let _ = stack.pop()?;
+            let _ = stack.pop_i32()?;
             *ip_counter += 1;
         }
         Opcode::Pop32bits => {
-            for _ in 0..4 {
-                let _ = stack.pop()?;
-            }
+            let _ = stack.pop_bytes(4)?;
             *ip_counter += 1;
         }
         Opcode::Dup => {
-            let value = stack.top()?;
-            stack.push(value);
+            let value = stack.peek_i32()?;
+            stack.push_i32(value);
             *ip_counter += 1;
         }
         Opcode::DupN => {
-            let n = stack.pop()? as usize;
+            let n = i32_to_usize(stack.pop_i32()?, "DupN count")?;
             if n == 0 {
                 return Err("DupN requires n >= 1".into());
             }
 
-            let len = stack.size();
+            let len = stack.len_i32s()?;
             if n > len {
                 return Err("Stack underflow".into());
             }
 
             for i in 0..n {
-                let value = stack.get(len - n + i)?;
-                stack.push(value);
+                let value = stack.get_i32(len - n + i)?;
+                stack.push_i32(value);
             }
 
             *ip_counter += 1;
         }
         Opcode::Swap => {
-            let n = stack.pop()? as usize;
+            let n = i32_to_usize(stack.pop_i32()?, "Swap count")?;
             if n < 2 {
                 return Err("Swap requires n >= 2".into());
             }
 
-            let direction = stack.pop()?;
-            let len = stack.size();
+            let direction = stack.pop_i32()?;
+            let len = stack.len_i32s()?;
             if n > len {
                 return Err("Stack underflow".into());
             }
 
             match direction {
-                0 => stack.rotate_left_once_last_n(n)?,
+                0 => stack.rotate_left_once_last_n_i32(n)?,
                 1 => {
                     for _ in 0..(n - 1) {
-                        stack.rotate_left_once_last_n(n)?;
+                        stack.rotate_left_once_last_n_i32(n)?;
                     }
                 }
                 _ => return Err("Swap direction must be 0 (left) or 1 (right)".into()),
@@ -174,156 +173,237 @@ fn execute_opcode(
 
             *ip_counter += 1;
         }
-        Opcode::Xor => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push(a ^ b);
+        Opcode::I32Xor => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32(a ^ b);
             *ip_counter += 1;
         }
-        Opcode::And => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push(((a != 0) && (b != 0)) as i64);
+        Opcode::I32And => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32(((a != 0) && (b != 0)) as i32);
             *ip_counter += 1;
         }
-        Opcode::Or => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push(((a != 0) || (b != 0)) as i64);
+        Opcode::I32Or => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32(((a != 0) || (b != 0)) as i32);
             *ip_counter += 1;
         }
-        Opcode::Zero => {
-            stack.push(0);
+        Opcode::I32Zero => {
+            stack.push_i32(0);
             *ip_counter += 1;
         }
-        Opcode::PushIntermediate(value) => {
-            stack.push(*value as i64);
+        Opcode::I32Push(value) => {
+            stack.push_i32(*value);
             *ip_counter += 1;
         }
-        Opcode::Add => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push(a.wrapping_add(b));
+        Opcode::I32Add => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32(a.wrapping_add(b));
             *ip_counter += 1;
         }
-        Opcode::Sub => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push(b.wrapping_sub(a));
+        Opcode::I32Sub => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32(b.wrapping_sub(a));
             *ip_counter += 1;
         }
-        Opcode::Mul => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push(a.wrapping_mul(b));
+        Opcode::I32Mul => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32(a.wrapping_mul(b));
             *ip_counter += 1;
         }
-        Opcode::Div => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push(b.wrapping_div(a));
+        Opcode::I32Div => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32(b.wrapping_div(a));
             *ip_counter += 1;
         }
-        Opcode::Mod => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push(b % a);
+        Opcode::I32Mod => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32(b % a);
             *ip_counter += 1;
         }
-        Opcode::ShiftLeft => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push(b << a);
+        Opcode::I32Shl => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32(b << a);
             *ip_counter += 1;
         }
-        Opcode::ShiftRight => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push(b >> a);
+        Opcode::I32Shr => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32(b >> a);
             *ip_counter += 1;
         }
-        Opcode::SmallerThan => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push((b < a) as i64);
+        Opcode::I32Lt => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32((b < a) as i32);
             *ip_counter += 1;
         }
-        Opcode::SmallerOrEqual => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push((b <= a) as i64);
+        Opcode::I32Le => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32((b <= a) as i32);
             *ip_counter += 1;
         }
-        Opcode::Equal => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push((a == b) as i64);
+        Opcode::I32Eq => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32((a == b) as i32);
             *ip_counter += 1;
         }
-        Opcode::GreaterThan => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push((b > a) as i64);
+        Opcode::I32Gt => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32((b > a) as i32);
             *ip_counter += 1;
         }
-        Opcode::GreaterOrEqual => {
-            let a = stack.pop()?;
-            let b = stack.pop()?;
-            stack.push((b >= a) as i64);
+        Opcode::I32Ge => {
+            let a = stack.pop_i32()?;
+            let b = stack.pop_i32()?;
+            stack.push_i32((b >= a) as i32);
             *ip_counter += 1;
         }
         Opcode::JumpIfTrue => {
-            let delta_address = stack.pop()?;
-            let condition = stack.pop()?;
+            let delta_address = stack.pop_i32()?;
+            let condition = stack.pop_i32()?;
             if condition != 0 {
-                // TODO add check if we have have a ip counter that is negative
-                *ip_counter = ((*ip_counter as i64) + delta_address + 1) as usize;
+                advance_ip_relative(ip_counter, delta_address)?;
             } else {
                 *ip_counter += 1;
             }
         }
-        Opcode::Not => {
-            let value = stack.pop()?;
-            stack.push((value == 0) as i64);
+        Opcode::I32Not => {
+            let value = stack.pop_i32()?;
+            stack.push_i32((value == 0) as i32);
             *ip_counter += 1;
         }
         Opcode::Print => {
-            let value = stack.pop()?;
+            let value = stack.pop_i32()?;
             print!("{}", value as u8 as char);
             *ip_counter += 1;
         }
         Opcode::PrintN => {
-            let size = stack.pop()? as usize;
-            let len = stack.size();
+            let size = i32_to_usize(stack.pop_i32()?, "PrintN size")?;
+            let len = stack.len_i32s()?;
             if size > len {
                 return Err("Stack underflow".into());
             }
 
             for i in 0..size {
-                let value = stack.get(len - size + i)?;
+                let value = stack.get_i32(len - size + i)?;
                 print!("{}", value as u8 as char);
             }
 
             for _ in 0..size {
-                stack.pop()?;
+                stack.pop_i32()?;
             }
 
             *ip_counter += 1;
         }
         Opcode::OperationCounter => {
-            stack.push(op_counter as i64);
+            let counter = i32::try_from(op_counter)
+                .map_err(|_| "Operation counter exceeds i32 range".to_string())?;
+            stack.push_i32(counter);
             *ip_counter += 1;
         }
         Opcode::Jump => {
-            let delta_address = stack.pop()?;
-            // TODO add check if we have have a ip counter that is negative
-            *ip_counter = ((*ip_counter as i64) + delta_address + 1) as usize;
+            let delta_address = stack.pop_i32()?;
+            advance_ip_relative(ip_counter, delta_address)?;
         }
         Opcode::Halt => {
-            let exit_code = stack.pop()?;
-            return Ok(Some(exit_code as i32));
+            let exit_code = stack.pop_i32()?;
+            return Ok(Some(exit_code));
         }
     }
 
     Ok(None)
+}
+
+fn i32_to_usize(value: i32, context: &str) -> Result<usize, String> {
+    usize::try_from(value).map_err(|_| format!("{context} must be non-negative"))
+}
+
+fn i32_to_u8(value: i32, context: &str) -> Result<u8, String> {
+    u8::try_from(value).map_err(|_| format!("{context} must fit into u8"))
+}
+
+fn advance_ip_relative(ip_counter: &mut usize, delta: i32) -> Result<(), String> {
+    let jump = isize::try_from(delta)
+        .map_err(|_| "Jump delta does not fit into isize".to_string())?
+        .checked_add(1)
+        .ok_or("Jump delta overflow".to_string())?;
+
+    *ip_counter = ip_counter
+        .checked_add_signed(jump)
+        .ok_or("Instruction pointer out of bounds".to_string())?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{frontend::compile_source, memory_lane::MemoryLane};
+
+    use super::*;
+
+    fn run_program(source: &str) -> i32 {
+        let mut heap_memory_lane = [0; 128];
+        let io_memory_lane = *b"";
+        let memory_lanes = [
+            MemoryLane::ReadWrite(&mut heap_memory_lane),
+            MemoryLane::ReadOnly(&io_memory_lane),
+        ];
+
+        let opcodes = compile_source("<test>", source).unwrap();
+        let mut program = Program::new(&opcodes);
+        let mut vm = Vm::new(Box::new(memory_lanes));
+
+        loop {
+            if let Some(code) = vm.step(&mut program).unwrap() {
+                return code;
+            }
+
+            if program.is_outside_program() {
+                panic!("program terminated without Halt");
+            }
+        }
+    }
+
+    #[test]
+    fn executes_typed_i32_arithmetic_program() {
+        let exit_code = run_program(
+            "\
+i32.PUSH 3
+i32.PUSH 4
+i32.ADD
+Halt
+",
+        );
+
+        assert_eq!(exit_code, 7);
+    }
+
+    #[test]
+    fn executes_symbolic_jump_program_with_typed_i32_push() {
+        let exit_code = run_program(
+            "\
+i32.PUSH 1
+JumpIfTrue .done
+i32.PUSH 99
+.done
+i32.PUSH 7
+Halt
+",
+        );
+
+        assert_eq!(exit_code, 7);
+    }
 }

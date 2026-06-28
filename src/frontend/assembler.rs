@@ -44,7 +44,13 @@ pub(crate) fn assemble_ir(path: &str, ir: &IrProgram) -> Result<Vec<Opcode>, Str
                 })?;
                 let jump_position = emitted_positions[index] + 1;
                 let delta = *target_position as i64 - jump_position as i64 - 1;
-                opcodes.push(Opcode::PushIntermediate(delta));
+                let delta = i32::try_from(delta).map_err(|_| {
+                    format!(
+                        "{path}:{}: jump delta to {} exceeds i32 range",
+                        instruction.source_line, label
+                    )
+                })?;
+                opcodes.push(Opcode::I32Push(delta));
                 opcodes.push(Opcode::Jump);
             }
             IrInstructionKind::JumpIfTrueLabel(label) => {
@@ -56,7 +62,13 @@ pub(crate) fn assemble_ir(path: &str, ir: &IrProgram) -> Result<Vec<Opcode>, Str
                 })?;
                 let jump_position = emitted_positions[index] + 1;
                 let delta = *target_position as i64 - jump_position as i64 - 1;
-                opcodes.push(Opcode::PushIntermediate(delta));
+                let delta = i32::try_from(delta).map_err(|_| {
+                    format!(
+                        "{path}:{}: jump delta to {} exceeds i32 range",
+                        instruction.source_line, label
+                    )
+                })?;
+                opcodes.push(Opcode::I32Push(delta));
                 opcodes.push(Opcode::JumpIfTrue);
             }
         }

@@ -1,4 +1,7 @@
-use crate::{frontend::ir::{IrInstructionKind, IrProgram}, opcode::Opcode};
+use crate::{
+    frontend::ir::{IrInstructionKind, IrProgram},
+    opcode::Opcode,
+};
 
 use super::OptimizationPass;
 
@@ -29,7 +32,7 @@ impl OptimizationPass for ConstantFoldMathPass {
             };
 
             let source_line = program.instructions[index].source_line;
-            program.instructions[index].kind = IrInstructionKind::Concrete(Opcode::PushIntermediate(result));
+            program.instructions[index].kind = IrInstructionKind::Concrete(Opcode::I32Push(result));
             program.instructions[index].source_line = source_line;
             program.remove_instruction(index + 2)?;
             program.remove_instruction(index + 1)?;
@@ -40,20 +43,20 @@ impl OptimizationPass for ConstantFoldMathPass {
     }
 }
 
-fn const_value(kind: &IrInstructionKind) -> Option<i64> {
+fn const_value(kind: &IrInstructionKind) -> Option<i32> {
     match kind {
-        IrInstructionKind::Concrete(Opcode::PushIntermediate(value)) => Some(*value),
-        IrInstructionKind::Concrete(Opcode::Zero) => Some(0),
+        IrInstructionKind::Concrete(Opcode::I32Push(value)) => Some(*value),
+        IrInstructionKind::Concrete(Opcode::I32Zero) => Some(0),
         _ => None,
     }
 }
 
-fn fold_math(kind: &IrInstructionKind, lhs: i64, rhs: i64) -> Option<i64> {
+fn fold_math(kind: &IrInstructionKind, lhs: i32, rhs: i32) -> Option<i32> {
     match kind {
-        IrInstructionKind::Concrete(Opcode::Add) => Some(lhs.wrapping_add(rhs)),
-        IrInstructionKind::Concrete(Opcode::Mul) => Some(lhs.wrapping_mul(rhs)),
-        IrInstructionKind::Concrete(Opcode::Sub) => Some(lhs.wrapping_sub(rhs)),
-        IrInstructionKind::Concrete(Opcode::Div) if rhs != 0 => Some(lhs.wrapping_div(rhs)),
+        IrInstructionKind::Concrete(Opcode::I32Add) => Some(lhs.wrapping_add(rhs)),
+        IrInstructionKind::Concrete(Opcode::I32Mul) => Some(lhs.wrapping_mul(rhs)),
+        IrInstructionKind::Concrete(Opcode::I32Sub) => Some(lhs.wrapping_sub(rhs)),
+        IrInstructionKind::Concrete(Opcode::I32Div) if rhs != 0 => Some(lhs.wrapping_div(rhs)),
         _ => None,
     }
 }
@@ -61,10 +64,7 @@ fn fold_math(kind: &IrInstructionKind, lhs: i64, rhs: i64) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use crate::frontend::{
-        assembler::assemble_ir,
-        ir::lower_to_ir,
-        parser::parse_source,
-        passes::optimize_ir,
+        assembler::assemble_ir, ir::lower_to_ir, parser::parse_source, passes::optimize_ir,
     };
 
     use super::*;
@@ -81,68 +81,68 @@ mod tests {
     fn folds_simple_constant_math() {
         let opcodes = optimize(
             "\
-PushIntermediate 3
-PushIntermediate 4
-Add
+i32.PUSH 3
+i32.PUSH 4
+i32.ADD
 Halt
 ",
         );
 
-        assert_eq!(opcodes, vec![Opcode::PushIntermediate(7), Opcode::Halt]);
+        assert_eq!(opcodes, vec![Opcode::I32Push(7), Opcode::Halt]);
     }
 
     #[test]
     fn folds_zero_and_push_constants() {
         let opcodes = optimize(
             "\
-Zero
-PushIntermediate 4
-Sub
+i32.ZERO
+i32.PUSH 4
+i32.SUB
 Halt
 ",
         );
 
-        assert_eq!(opcodes, vec![Opcode::PushIntermediate(-4), Opcode::Halt]);
+        assert_eq!(opcodes, vec![Opcode::I32Push(-4), Opcode::Halt]);
     }
 
     #[test]
     fn folds_chained_math() {
         let opcodes = optimize(
             "\
-PushIntermediate 3
-PushIntermediate 4
-Add
-PushIntermediate 5
-Mul
+i32.PUSH 3
+i32.PUSH 4
+i32.ADD
+i32.PUSH 5
+i32.MUL
 Halt
 ",
         );
 
-        assert_eq!(opcodes, vec![Opcode::PushIntermediate(35), Opcode::Halt]);
+        assert_eq!(opcodes, vec![Opcode::I32Push(35), Opcode::Halt]);
     }
 
     #[test]
     fn folds_numeric_programs_when_safe() {
         let opcodes = optimize(
             "\
-PushIntermediate 3
-PushIntermediate 4
-Sub
+i32.PUSH 3
+i32.PUSH 4
+i32.SUB
 Halt
 ",
         );
 
-        assert_eq!(opcodes, vec![Opcode::PushIntermediate(-1), Opcode::Halt]);
+        assert_eq!(opcodes, vec![Opcode::I32Push(-1), Opcode::Halt]);
     }
 
     #[test]
     fn does_not_fold_across_stack_change() {
         let opcodes = optimize(
             "\
-PushIntermediate 3
-PushIntermediate 4
+i32.PUSH 3
+i32.PUSH 4
 Dup
-Add
+i32.ADD
 Halt
 ",
         );
@@ -150,10 +150,10 @@ Halt
         assert_eq!(
             opcodes,
             vec![
-                Opcode::PushIntermediate(3),
-                Opcode::PushIntermediate(4),
+                Opcode::I32Push(3),
+                Opcode::I32Push(4),
                 Opcode::Dup,
-                Opcode::Add,
+                Opcode::I32Add,
                 Opcode::Halt
             ]
         );
@@ -163,10 +163,10 @@ Halt
     fn does_not_fold_across_labels() {
         let opcodes = optimize(
             "\
-PushIntermediate 3
+i32.PUSH 3
 .mid
-PushIntermediate 4
-Add
+i32.PUSH 4
+i32.ADD
 Halt
 ",
         );
@@ -174,9 +174,9 @@ Halt
         assert_eq!(
             opcodes,
             vec![
-                Opcode::PushIntermediate(3),
-                Opcode::PushIntermediate(4),
-                Opcode::Add,
+                Opcode::I32Push(3),
+                Opcode::I32Push(4),
+                Opcode::I32Add,
                 Opcode::Halt
             ]
         );
@@ -186,9 +186,9 @@ Halt
     fn does_not_fold_division_by_zero() {
         let opcodes = optimize(
             "\
-PushIntermediate 3
-Zero
-Div
+i32.PUSH 3
+i32.ZERO
+i32.DIV
 Halt
 ",
         );
@@ -196,9 +196,9 @@ Halt
         assert_eq!(
             opcodes,
             vec![
-                Opcode::PushIntermediate(3),
-                Opcode::Zero,
-                Opcode::Div,
+                Opcode::I32Push(3),
+                Opcode::I32Zero,
+                Opcode::I32Div,
                 Opcode::Halt
             ]
         );
