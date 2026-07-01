@@ -2,7 +2,7 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as DeError};
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub enum Opcode {
     /// Pops an address from the stack, reads one byte from the current memory lane, and pushes it
     Read,
@@ -39,6 +39,14 @@ pub enum Opcode {
     I32Gt,
     I32Ge,
     I32Not,
+    F32Push(f32),
+    F32Add,
+    F32Sub,
+    F32Mul,
+    F32Div,
+    F32Eq,
+    F32Gt,
+    F32Ge,
     /// Pops a delta from the stack and jumps to that opcode if the next stack value is non-zero
     JumpIfTrue,
     Print,
@@ -50,6 +58,19 @@ pub enum Opcode {
     Halt,
     CallExternal(&'static str),
 }
+
+impl PartialEq for Opcode {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::I32Push(l0), Self::I32Push(r0)) => l0 == r0,
+            (Self::F32Push(l0), Self::F32Push(r0)) => l0 == r0,
+            (Self::CallExternal(l0), Self::CallExternal(r0)) => l0 == r0,
+            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+        }
+    }
+}
+
+impl Eq for Opcode {}
 
 impl fmt::Debug for Opcode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -88,6 +109,14 @@ impl fmt::Display for Opcode {
             Opcode::I32Gt => write!(f, "i32.GT"),
             Opcode::I32Ge => write!(f, "i32.GE"),
             Opcode::I32Not => write!(f, "i32.NOT"),
+            Opcode::F32Push(value) => write!(f, "f32.PUSH {value}"),
+            Opcode::F32Add => write!(f, "f32.ADD"),
+            Opcode::F32Sub => write!(f, "f32.SUB"),
+            Opcode::F32Mul => write!(f, "f32.MUL"),
+            Opcode::F32Div => write!(f, "f32.DIV"),
+            Opcode::F32Eq => write!(f, "f32.EQ"),
+            Opcode::F32Gt => write!(f, "f32.GT"),
+            Opcode::F32Ge => write!(f, "f32.GE"),
             Opcode::JumpIfTrue => write!(f, "JumpIfTrue"),
             Opcode::Print => write!(f, "Print"),
             Opcode::PrintN => write!(f, "PrintN"),
@@ -110,6 +139,11 @@ fn parse_i64(arg: Option<&str>, opcode: &str) -> Result<i64, String> {
 fn parse_i32(arg: Option<&str>, opcode: &str) -> Result<i32, String> {
     let value = parse_i64(arg, opcode)?;
     i32::try_from(value).map_err(|_| format!("argument for {opcode} is out of i32 range: {value}"))
+}
+
+fn parse_f32(arg: Option<&str>, opcode: &str) -> Result<f32, String> {
+    let as_str = parse_str(arg, opcode)?;
+    f32::from_str(as_str).map_err(|err| err.to_string())
 }
 
 fn parse_str(arg: Option<&str>, opcode: &str) -> Result<&'static str, String> {
@@ -167,6 +201,14 @@ impl FromStr for Opcode {
             "i32.GT" => Opcode::I32Gt,
             "i32.GE" => Opcode::I32Ge,
             "i32.NOT" => Opcode::I32Not,
+            "f32.PUSH" => Opcode::F32Push(parse_f32(parts.next(), opcode)?),
+            "f32.ADD" => Opcode::F32Add,
+            "f32.SUB" => Opcode::F32Sub,
+            "f32.MUL" => Opcode::F32Mul,
+            "f32.DIV" => Opcode::F32Div,
+            "f32.EQ" => Opcode::F32Eq,
+            "f32.GT" => Opcode::F32Gt,
+            "f32.GE" => Opcode::F32Ge,
             "JumpIfTrue" => Opcode::JumpIfTrue,
             "Print" => Opcode::Print,
             "PrintN" => Opcode::PrintN,
@@ -220,5 +262,20 @@ mod tests {
         assert!("Zero".parse::<Opcode>().is_err());
         assert!("Add".parse::<Opcode>().is_err());
         assert!("PushIntermediate 3".parse::<Opcode>().is_err());
+    }
+
+    #[test]
+    fn parses_typed_f32_opcodes() {
+        assert_eq!(
+            "f32.PUSH -1.5".parse::<Opcode>().unwrap(),
+            Opcode::F32Push(-1.5)
+        );
+        assert_eq!("f32.ADD".parse::<Opcode>().unwrap(), Opcode::F32Add);
+        assert_eq!("f32.SUB".parse::<Opcode>().unwrap(), Opcode::F32Sub);
+        assert_eq!("f32.MUL".parse::<Opcode>().unwrap(), Opcode::F32Mul);
+        assert_eq!("f32.DIV".parse::<Opcode>().unwrap(), Opcode::F32Div);
+        assert_eq!("f32.EQ".parse::<Opcode>().unwrap(), Opcode::F32Eq);
+        assert_eq!("f32.GT".parse::<Opcode>().unwrap(), Opcode::F32Gt);
+        assert_eq!("f32.GE".parse::<Opcode>().unwrap(), Opcode::F32Ge);
     }
 }

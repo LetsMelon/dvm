@@ -1,0 +1,4 @@
+f32.PUSH 0.1
+f32.PUSH 0.2
+f32.ADD
+Halt

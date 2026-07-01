@@ -9,15 +9,21 @@ use self::{
     assembler::assemble_ir,
     ir::lower_to_ir,
     parser::parse_source,
-    passes::{constant_fold_math::ConstantFoldMathPass, noop::NoopOptimizationPass, optimize_ir},
+    passes::{
+        constant_fold_f32::ConstantFoldF32Pass, constant_fold_math::ConstantFoldMathPass,
+        noop::NoopOptimizationPass, optimize_ir,
+    },
 };
 
 pub fn compile_source(path: &str, source: &str) -> Result<Vec<Opcode>, String> {
     let parsed = parse_source(path, source)?;
     let mut ir = lower_to_ir(path, parsed)?;
+
     let fold_math = ConstantFoldMathPass;
+    let fold_f32 = ConstantFoldF32Pass;
     let noop = NoopOptimizationPass;
-    optimize_ir(&mut ir, &[&fold_math, &noop])?;
+
+    optimize_ir(&mut ir, &[&fold_math, &fold_f32, &noop])?;
     assemble_ir(path, &ir)
 }
 

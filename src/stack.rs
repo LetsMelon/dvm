@@ -89,6 +89,22 @@ impl Stack {
         Ok(self.inner[self.len - 1])
     }
 
+    pub fn push_f32(&mut self, value: f32) -> Result<(), String> {
+        self.push_bytes(&value.to_le_bytes())
+    }
+
+    pub fn pop_f32(&mut self) -> Result<f32, String> {
+        let mut bytes = [0; 4];
+        self.pop_bytes(&mut bytes)?;
+        Ok(f32::from_le_bytes(bytes))
+    }
+
+    pub fn peek_f32(&self) -> Result<f32, String> {
+        let mut bytes = [0; 4];
+        self.peek_bytes(&mut bytes)?;
+        Ok(f32::from_le_bytes(bytes))
+    }
+
     pub(crate) fn len_i32s(&self) -> Result<usize, String> {
         if self.len % 4 != 0 {
             return Err("Stack is not aligned to i32 values".to_string());

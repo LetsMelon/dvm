@@ -169,8 +169,16 @@ fn execute_opcode<'memory>(
         Opcode::I32Eq => execute_i32_eq(program, stack),
         Opcode::I32Gt => execute_i32_gt(program, stack),
         Opcode::I32Ge => execute_i32_ge(program, stack),
-        Opcode::JumpIfTrue => execute_jump_if_true(program, stack),
         Opcode::I32Not => execute_i32_not(program, stack),
+        Opcode::F32Push(value) => execute_f32_push(program, stack, *value),
+        Opcode::F32Add => execute_f32_add(program, stack),
+        Opcode::F32Sub => execute_f32_sub(program, stack),
+        Opcode::F32Mul => execute_f32_mul(program, stack),
+        Opcode::F32Div => execute_f32_div(program, stack),
+        Opcode::F32Eq => execute_i32_eq(program, stack),
+        Opcode::F32Gt => execute_f32_gt(program, stack),
+        Opcode::F32Ge => execute_f32_ge(program, stack),
+        Opcode::JumpIfTrue => execute_jump_if_true(program, stack),
         Opcode::Print => execute_print(program, stack),
         Opcode::PrintN => execute_print_n(program, stack),
         Opcode::Jump => execute_jump(program, stack),
@@ -603,6 +611,96 @@ opcode_handler! {
 }
 
 opcode_handler! {
+    fn execute_f32_push(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+        value: f32,
+    ) -> Result<Option<i32>, String> {
+        stack.push_f32(value)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_f32_add(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_f32()?;
+        let b = stack.pop_f32()?;
+        stack.push_f32(a + b)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_f32_sub(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_f32()?;
+        let b = stack.pop_f32()?;
+        stack.push_f32(b - a)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_f32_mul(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_f32()?;
+        let b = stack.pop_f32()?;
+        stack.push_f32(a * b)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_f32_div(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_f32()?;
+        let b = stack.pop_f32()?;
+        stack.push_f32(b / a)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_f32_gt(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_f32()?;
+        let b = stack.pop_f32()?;
+        stack.push_i32((b > a) as i32)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_f32_ge(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let a = stack.pop_f32()?;
+        let b = stack.pop_f32()?;
+        stack.push_i32((b >= a) as i32)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
     fn execute_print_n(
         program: &mut Program<'_>,
         stack: &mut Stack,
@@ -744,6 +842,48 @@ mod tests {
         }
     }
 
+    fn run_f32_binary_program(opcode: &str, lhs: f32, rhs: f32, expected: f32) {
+        let mut heap_memory_lane = [0; 128];
+        let io_memory_lane = *b"";
+        let memory_lanes = [
+            MemoryLane::ReadWrite(&mut heap_memory_lane),
+            MemoryLane::ReadOnly(&io_memory_lane),
+        ];
+
+        let source = format!(
+            "\
+f32.PUSH {lhs}
+f32.PUSH {rhs}
+{opcode}
+CallExternal assert_result
+i32.PUSH 0
+Halt
+"
+        );
+        let opcodes = compile_source("<test>", &source).unwrap();
+        let mut program = Program::new(&opcodes);
+        let mut vm = Vm::new(Box::new(memory_lanes));
+
+        vm.register_external_function("assert_result", move |mut args| {
+            let actual = args.stack().pop_f32()?;
+            if (actual - expected).abs() > f32::EPSILON {
+                return Err(format!("expected {expected}, got {actual}"));
+            }
+            Ok(())
+        });
+
+        loop {
+            if let Some(code) = vm.step(&mut program).unwrap() {
+                assert_eq!(code, 0);
+                return;
+            }
+
+            if program.is_outside_program() {
+                panic!("program terminated without Halt");
+            }
+        }
+    }
+
     #[test]
     fn executes_typed_i32_arithmetic_program() {
         let exit_code = run_program(
@@ -756,6 +896,50 @@ Halt
         );
 
         assert_eq!(exit_code, 7);
+    }
+
+    #[test]
+    fn executes_typed_f32_arithmetic_programs() {
+        run_f32_binary_program("f32.SUB", 10.5, 4.25, 6.25);
+        run_f32_binary_program("f32.MUL", 2.5, 4.0, 10.0);
+        run_f32_binary_program("f32.DIV", 9.0, 3.0, 3.0);
+    }
+
+    #[test]
+    fn executes_typed_f32_comparison_programs() {
+        assert_eq!(
+            run_program(
+                "\
+f32.PUSH 4.5
+f32.PUSH 4.5
+f32.EQ
+Halt
+"
+            ),
+            1
+        );
+        assert_eq!(
+            run_program(
+                "\
+f32.PUSH 4.5
+f32.PUSH 3.5
+f32.GT
+Halt
+"
+            ),
+            1
+        );
+        assert_eq!(
+            run_program(
+                "\
+f32.PUSH 4.5
+f32.PUSH 4.5
+f32.GE
+Halt
+"
+            ),
+            1
+        );
     }
 
     #[test]
