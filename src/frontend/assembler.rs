@@ -4,7 +4,25 @@ use crate::opcode::Opcode;
 
 use super::ir::{IrInstructionKind, IrProgram};
 
+pub struct AssembledProgram {
+    pub opcodes: Vec<Opcode>,
+    pub metadata: ProgramMetadata,
+}
+
+pub struct ProgramMetadata {
+    pub labels_by_ip: Vec<Vec<String>>,
+    pub source_lines_by_ip: Vec<usize>,
+}
+
+#[cfg(test)]
 pub(crate) fn assemble_ir(path: &str, ir: &IrProgram) -> Result<Vec<Opcode>, String> {
+    Ok(assemble_ir_with_metadata(path, ir)?.opcodes)
+}
+
+pub(crate) fn assemble_ir_with_metadata(
+    path: &str,
+    ir: &IrProgram,
+) -> Result<AssembledProgram, String> {
     if ir.instructions.is_empty() {
         return Err(format!("program file {path} did not contain any opcodes"));
     }
@@ -31,10 +49,22 @@ pub(crate) fn assemble_ir(path: &str, ir: &IrProgram) -> Result<Vec<Opcode>, Str
     }
 
     let mut opcodes = Vec::with_capacity(emitted_count);
+    let mut labels_by_ip = vec![Vec::new(); emitted_count];
+    let mut source_lines_by_ip = Vec::with_capacity(emitted_count);
 
     for (index, instruction) in ir.instructions.iter().enumerate() {
+        let emitted_position = emitted_positions[index];
+        labels_by_ip[emitted_position] = instruction
+            .labels_here
+            .iter()
+            .map(|label| label.name.clone())
+            .collect();
+
         match &instruction.kind {
-            IrInstructionKind::Concrete(opcode) => opcodes.push(opcode.clone()),
+            IrInstructionKind::Concrete(opcode) => {
+                opcodes.push(opcode.clone());
+                source_lines_by_ip.push(instruction.source_line);
+            }
             IrInstructionKind::JumpLabel(label) => {
                 let (target_position, _) = label_positions.get(label).ok_or_else(|| {
                     format!(
@@ -52,6 +82,8 @@ pub(crate) fn assemble_ir(path: &str, ir: &IrProgram) -> Result<Vec<Opcode>, Str
                 })?;
                 opcodes.push(Opcode::I32Push(delta));
                 opcodes.push(Opcode::Jump);
+                source_lines_by_ip.push(instruction.source_line);
+                source_lines_by_ip.push(instruction.source_line);
             }
             IrInstructionKind::JumpIfTrueLabel(label) => {
                 let (target_position, _) = label_positions.get(label).ok_or_else(|| {
@@ -70,11 +102,19 @@ pub(crate) fn assemble_ir(path: &str, ir: &IrProgram) -> Result<Vec<Opcode>, Str
                 })?;
                 opcodes.push(Opcode::I32Push(delta));
                 opcodes.push(Opcode::JumpIfTrue);
+                source_lines_by_ip.push(instruction.source_line);
+                source_lines_by_ip.push(instruction.source_line);
             }
         }
     }
 
-    Ok(opcodes)
+    Ok(AssembledProgram {
+        opcodes,
+        metadata: ProgramMetadata {
+            labels_by_ip,
+            source_lines_by_ip,
+        },
+    })
 }
 
 fn emitted_width(kind: &IrInstructionKind) -> usize {

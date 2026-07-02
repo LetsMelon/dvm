@@ -5,7 +5,14 @@ use std::{
     time::SystemTime,
 };
 
-use dvm::{frontend, memory_lane::MemoryLane, opcode::Opcode, program::Program, vm::Vm};
+use dvm::{
+    frontend::{self, AssembledProgram},
+    memory_lane::MemoryLane,
+    opcode::Opcode,
+    perf_profile::PerfProfiler,
+    program::Program,
+    vm::Vm,
+};
 
 const HELP: &str = "\
 Usage:
@@ -64,6 +71,13 @@ fn load_opcodes(path: &str) -> Result<Vec<Opcode>, String> {
     frontend::compile_source(path, &source)
 }
 
+fn load_program(path: &str) -> Result<AssembledProgram, String> {
+    let source =
+        fs::read_to_string(path).map_err(|e| format!("could not read program file {path}: {e}"))?;
+
+    frontend::compile_source_with_metadata(path, &source)
+}
+
 fn run_program(path: &str, perf: bool) -> Result<i32, String> {
     let mut heap_memory_lane = [0; 1024];
     let io_memory_lane = include_bytes!("../test.txt");
@@ -76,20 +90,18 @@ fn run_program(path: &str, perf: bool) -> Result<i32, String> {
     let mut vm = Vm::new(Box::new(memory_lanes));
     register_standard_external_functions(&mut vm);
 
-    let opcodes = load_opcodes(path)?;
+    let AssembledProgram { opcodes, metadata } = load_program(path)?;
     let mut program = Program::new(&opcodes);
     let mut exit_code = 0;
 
     let start = SystemTime::now();
 
     loop {
-        let step_result = vm.step(&mut program);
+        let step_result = vm
+            .step(&mut program)
+            .map_err(|e| format!("runtime error: {e}"))?;
 
-        if let Err(e) = step_result {
-            return Err(format!("runtime error: {e}"));
-        }
-
-        if let Ok(Some(finish)) = step_result {
+        if let Some(finish) = step_result {
             exit_code = finish;
             break;
         }
@@ -114,10 +126,26 @@ fn run_program(path: &str, perf: bool) -> Result<i32, String> {
             vm.get_op_counter() as f64 / duration.as_secs_f64()
         );
         eprintln!();
-        eprintln!("Line metrics:");
-        eprintln!("Count\tLine\tOpcode");
-        for (i, count) in program.get_line_metrics().iter().enumerate() {
-            eprintln!("{}\t{}\t{:?}", count, i, opcodes[i]);
+        eprintln!("IP metrics:");
+        eprintln!("Count\tIP\tLine\tOpcode");
+        let mut previous_source_line = None;
+        for (ip, count) in program.get_line_metrics().iter().enumerate() {
+            let source_line = metadata.source_lines_by_ip.get(ip).copied();
+            let source_line_display = match source_line {
+                Some(line) if Some(line) != previous_source_line => line.to_string(),
+                _ => String::new(),
+            };
+            previous_source_line = source_line;
+
+            eprintln!("{count}\t{ip}\t{source_line_display}\t{:?}", opcodes[ip]);
+        }
+
+        {
+            let mut profiler = PerfProfiler::new(path, &metadata, &opcodes);
+            profiler.record_ip_counts(program.get_line_metrics());
+            profiler.write_to_file("profile.json")?;
+            eprintln!();
+            eprintln!("Firefox Profiler profile written to profile.json");
         }
     }
 
