@@ -1,4 +1,95 @@
-f32.PUSH 0.1
-f32.PUSH 0.2
-f32.ADD
+i32.PUSH 1024 // max n for the sine series; change this to use more or fewer terms
+f32.PUSH 3.14159265359
+f32.PUSH 1024
+f32.DIV // step size, pi / 4 with pi hardcoded as 3.1415
+f32.PUSH 0 // x
+
+.x_loop
+Dup
+f32.PUSH 3.14159265359
+f32.PUSH 2
+f32.MUL // 2pi
+f32.PUSH 0.0001
+f32.ADD // include the final 2pi sample despite f32 accumulation error
+f32.GT
+JumpIfTrue .done
+
+Dup
+Dup // term = x, sum = x
+i32.ZERO // n
+i32.PUSH 1
+i32.PUSH 3
+Swap // [x, term, sum, n] -> [x, n, term, sum]
+
+.term_loop
+i32.PUSH 3
+i32.PickN // copy n
+i32.PUSH 7
+i32.PickN // copy max_n
+i32.GE // n >= max_n
+JumpIfTrue .print_result
+
+i32.PUSH 4
+i32.PickN // copy x
+Dup
+f32.MUL
+f32.PUSH -1
+f32.MUL // -x*x
+
+i32.PUSH 4
+i32.PickN // copy n
+Dup
+i32.PUSH 2
+i32.MUL
+i32.PUSH 2
+i32.ADD // 2n + 2
+Dup
+i32.PUSH 1
+i32.ADD // 2n + 3
+i32.MUL // (2n + 2) * (2n + 3)
+i32.PUSH 1
+i32.PUSH 2
+Swap
+Pop // drop copied n
+i32.TO.f32
+f32.DIV // factor = -x*x / ((2n + 2) * (2n + 3))
+
+i32.PUSH 3
+i32.PickN // copy term
+f32.MUL // next term
+
+Dup
+i32.PUSH 1
+i32.PUSH 3
+Swap // [old term, sum, next term, next term] -> [old term, next term, sum, next term]
+f32.ADD // next sum
+i32.PUSH 0
+i32.PUSH 3
+Swap
+Pop // drop old term, keep [next term, next sum]
+
+i32.PUSH 0
+i32.PUSH 3
+Swap // [n, term, sum] -> [term, sum, n]
+i32.PUSH 1
+i32.ADD // n += 1
+i32.PUSH 1
+i32.PUSH 3
+Swap // [term, sum, n] -> [n, term, sum]
+Jump .term_loop
+
+.print_result
+CallExternal f32.PRINT
+Pop // drop term
+Pop // drop n
+i32.PUSH 2
+i32.PickN // copy step
+f32.ADD // x += step
+Jump .x_loop
+
+.done
+Pop // drop x
+Pop // drop step
+Pop // drop max n
+i32.PUSH 0
 Halt

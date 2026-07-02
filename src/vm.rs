@@ -157,6 +157,7 @@ fn execute_opcode<'memory>(
         Opcode::I32Or => execute_i32_or(program, stack),
         Opcode::I32Zero => execute_i32_zero(program, stack),
         Opcode::I32Push(value) => execute_i32_push(program, stack, *value),
+        Opcode::I32PickN => execute_i32_pick_n(program, stack),
         Opcode::I32Add => execute_i32_add(program, stack),
         Opcode::I32Sub => execute_i32_sub(program, stack),
         Opcode::I32Mul => execute_i32_mul(program, stack),
@@ -170,6 +171,7 @@ fn execute_opcode<'memory>(
         Opcode::I32Gt => execute_i32_gt(program, stack),
         Opcode::I32Ge => execute_i32_ge(program, stack),
         Opcode::I32Not => execute_i32_not(program, stack),
+        Opcode::I32ToF32 => execute_i32_to_f32(program, stack),
         Opcode::F32Push(value) => execute_f32_push(program, stack, *value),
         Opcode::F32Add => execute_f32_add(program, stack),
         Opcode::F32Sub => execute_f32_sub(program, stack),
@@ -178,6 +180,7 @@ fn execute_opcode<'memory>(
         Opcode::F32Eq => execute_i32_eq(program, stack),
         Opcode::F32Gt => execute_f32_gt(program, stack),
         Opcode::F32Ge => execute_f32_ge(program, stack),
+        Opcode::F32ToI32 => execute_f32_to_i32(program, stack),
         Opcode::JumpIfTrue => execute_jump_if_true(program, stack),
         Opcode::Print => execute_print(program, stack),
         Opcode::PrintN => execute_print_n(program, stack),
@@ -415,6 +418,29 @@ opcode_handler! {
 }
 
 opcode_handler! {
+    fn execute_i32_pick_n(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let n = stack.pop_i32()?;
+        if !(1..=8).contains(&n) {
+            return Err("i32.PickN requires n between 1 and 8".into());
+        }
+
+        let n = usize::try_from(n).expect("n is validated to be positive");
+        let len = stack.len_i32s()?;
+        if n > len {
+            return Err("Stack underflow".into());
+        }
+
+        let value = stack.get_i32(len - n)?;
+        stack.push_i32(value)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
     fn execute_i32_add(
         program: &mut Program<'_>,
         stack: &mut Stack,
@@ -599,6 +625,18 @@ opcode_handler! {
 }
 
 opcode_handler! {
+    fn execute_i32_to_f32(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let value = stack.pop_i32()?;
+        stack.push_f32(value as f32)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
     fn execute_print(
         program: &mut Program<'_>,
         stack: &mut Stack,
@@ -695,6 +733,18 @@ opcode_handler! {
         let a = stack.pop_f32()?;
         let b = stack.pop_f32()?;
         stack.push_i32((b >= a) as i32)?;
+        program.ip_counter += 1;
+        Ok(None)
+    }
+}
+
+opcode_handler! {
+    fn execute_f32_to_i32(
+        program: &mut Program<'_>,
+        stack: &mut Stack,
+    ) -> Result<Option<i32>, String> {
+        let value = stack.pop_f32()?;
+        stack.push_i32(value.round() as i32)?;
         program.ip_counter += 1;
         Ok(None)
     }
@@ -842,6 +892,31 @@ mod tests {
         }
     }
 
+    fn run_program_error(source: &str) -> String {
+        let mut heap_memory_lane = [0; 128];
+        let io_memory_lane = *b"";
+        let memory_lanes = [
+            MemoryLane::ReadWrite(&mut heap_memory_lane),
+            MemoryLane::ReadOnly(&io_memory_lane),
+        ];
+
+        let opcodes = compile_source("<test>", source).unwrap();
+        let mut program = Program::new(&opcodes);
+        let mut vm = Vm::new(Box::new(memory_lanes));
+
+        loop {
+            match vm.step(&mut program) {
+                Ok(Some(_)) => panic!("program terminated without error"),
+                Ok(None) => {}
+                Err(error) => return error,
+            }
+
+            if program.is_outside_program() {
+                panic!("program terminated without error");
+            }
+        }
+    }
+
     fn run_f32_binary_program(opcode: &str, lhs: f32, rhs: f32, expected: f32) {
         let mut heap_memory_lane = [0; 128];
         let io_memory_lane = *b"";
@@ -896,6 +971,50 @@ Halt
         );
 
         assert_eq!(exit_code, 7);
+    }
+
+    #[test]
+    fn executes_i32_pick_n() {
+        let exit_code = run_program(
+            "\
+i32.PUSH 11
+i32.PUSH 22
+i32.PUSH 2
+i32.PickN
+Halt
+",
+        );
+
+        assert_eq!(exit_code, 11);
+    }
+
+    #[test]
+    fn i32_pick_n_copies_f32_bits() {
+        let exit_code = run_program(
+            "\
+f32.PUSH 1.5
+i32.PUSH 1
+i32.PickN
+f32.TO.i32
+Halt
+",
+        );
+
+        assert_eq!(exit_code, 2);
+    }
+
+    #[test]
+    fn i32_pick_n_validates_range() {
+        let error = run_program_error(
+            "\
+i32.PUSH 11
+i32.PUSH 9
+i32.PickN
+Halt
+",
+        );
+
+        assert!(error.contains("i32.PickN requires n between 1 and 8"));
     }
 
     #[test]

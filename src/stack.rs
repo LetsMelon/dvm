@@ -123,7 +123,7 @@ impl Stack {
             .inner
             .get(start..end)
             .filter(|_| end <= self.len)
-            .ok_or("Stack underflow".to_string())?;
+            .ok_or_else(|| "Stack underflow".to_string())?;
 
         Ok(i32::from_le_bytes(
             bytes.try_into().expect("slice length is 4"),
@@ -150,7 +150,7 @@ impl Stack {
         let new_len = self
             .len
             .checked_add(additional)
-            .ok_or("Stack capacity overflow".to_string())?;
+            .ok_or_else(|| "Stack capacity overflow".to_string())?;
 
         if new_len > self.inner.len() {
             return Err(format!(

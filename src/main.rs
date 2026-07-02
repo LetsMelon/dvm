@@ -43,6 +43,18 @@ fn register_standard_external_functions(vm: &mut Vm<'_>) {
 
         Ok(())
     });
+
+    vm.register_external_function("f32.POW", |mut args| {
+        let exponent = args.stack().pop_f32()?;
+        let base = args.stack().pop_f32()?;
+        args.stack().push_f32(base.powf(exponent))?;
+        Ok(())
+    });
+
+    vm.register_external_function("f32.PRINT", |mut args| {
+        println!("{}", args.stack().pop_f32()?);
+        Ok(())
+    });
 }
 
 fn load_opcodes(path: &str) -> Result<Vec<Opcode>, String> {

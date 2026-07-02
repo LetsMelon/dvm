@@ -26,6 +26,8 @@ pub enum Opcode {
     I32Or,
     I32Zero,
     I32Push(i32),
+    /// Pops n from the stack and copies the nth 32-bit value below the top, where n is 1..=8
+    I32PickN,
     I32Add,
     I32Sub,
     I32Mul,
@@ -39,6 +41,7 @@ pub enum Opcode {
     I32Gt,
     I32Ge,
     I32Not,
+    I32ToF32,
     F32Push(f32),
     F32Add,
     F32Sub,
@@ -47,6 +50,7 @@ pub enum Opcode {
     F32Eq,
     F32Gt,
     F32Ge,
+    F32ToI32,
     /// Pops a delta from the stack and jumps to that opcode if the next stack value is non-zero
     JumpIfTrue,
     Print,
@@ -96,6 +100,7 @@ impl fmt::Display for Opcode {
             Opcode::I32Or => write!(f, "i32.OR"),
             Opcode::I32Zero => write!(f, "i32.ZERO"),
             Opcode::I32Push(value) => write!(f, "i32.PUSH {value}"),
+            Opcode::I32PickN => write!(f, "i32.PickN"),
             Opcode::I32Add => write!(f, "i32.ADD"),
             Opcode::I32Sub => write!(f, "i32.SUB"),
             Opcode::I32Mul => write!(f, "i32.MUL"),
@@ -109,6 +114,7 @@ impl fmt::Display for Opcode {
             Opcode::I32Gt => write!(f, "i32.GT"),
             Opcode::I32Ge => write!(f, "i32.GE"),
             Opcode::I32Not => write!(f, "i32.NOT"),
+            Opcode::I32ToF32 => write!(f, "i32.TO.f32"),
             Opcode::F32Push(value) => write!(f, "f32.PUSH {value}"),
             Opcode::F32Add => write!(f, "f32.ADD"),
             Opcode::F32Sub => write!(f, "f32.SUB"),
@@ -117,6 +123,7 @@ impl fmt::Display for Opcode {
             Opcode::F32Eq => write!(f, "f32.EQ"),
             Opcode::F32Gt => write!(f, "f32.GT"),
             Opcode::F32Ge => write!(f, "f32.GE"),
+            Opcode::F32ToI32 => write!(f, "f32.TO.i32"),
             Opcode::JumpIfTrue => write!(f, "JumpIfTrue"),
             Opcode::Print => write!(f, "Print"),
             Opcode::PrintN => write!(f, "PrintN"),
@@ -188,6 +195,7 @@ impl FromStr for Opcode {
             "i32.OR" => Opcode::I32Or,
             "i32.ZERO" => Opcode::I32Zero,
             "i32.PUSH" => Opcode::I32Push(parse_i32(parts.next(), opcode)?),
+            "i32.PickN" => Opcode::I32PickN,
             "i32.ADD" => Opcode::I32Add,
             "i32.SUB" => Opcode::I32Sub,
             "i32.MUL" => Opcode::I32Mul,
@@ -201,6 +209,7 @@ impl FromStr for Opcode {
             "i32.GT" => Opcode::I32Gt,
             "i32.GE" => Opcode::I32Ge,
             "i32.NOT" => Opcode::I32Not,
+            "i32.TO.f32" => Opcode::I32ToF32,
             "f32.PUSH" => Opcode::F32Push(parse_f32(parts.next(), opcode)?),
             "f32.ADD" => Opcode::F32Add,
             "f32.SUB" => Opcode::F32Sub,
@@ -209,6 +218,7 @@ impl FromStr for Opcode {
             "f32.EQ" => Opcode::F32Eq,
             "f32.GT" => Opcode::F32Gt,
             "f32.GE" => Opcode::F32Ge,
+            "f32.TO.i32" => Opcode::F32ToI32,
             "JumpIfTrue" => Opcode::JumpIfTrue,
             "Print" => Opcode::Print,
             "PrintN" => Opcode::PrintN,
@@ -250,6 +260,7 @@ mod tests {
     #[test]
     fn parses_typed_i32_opcodes() {
         assert_eq!("i32.ZERO".parse::<Opcode>().unwrap(), Opcode::I32Zero);
+        assert_eq!("i32.PickN".parse::<Opcode>().unwrap(), Opcode::I32PickN);
         assert_eq!("i32.ADD".parse::<Opcode>().unwrap(), Opcode::I32Add);
         assert_eq!(
             "i32.PUSH -12".parse::<Opcode>().unwrap(),
@@ -277,5 +288,7 @@ mod tests {
         assert_eq!("f32.EQ".parse::<Opcode>().unwrap(), Opcode::F32Eq);
         assert_eq!("f32.GT".parse::<Opcode>().unwrap(), Opcode::F32Gt);
         assert_eq!("f32.GE".parse::<Opcode>().unwrap(), Opcode::F32Ge);
+        assert_eq!("i32.TO.f32".parse::<Opcode>().unwrap(), Opcode::I32ToF32);
+        assert_eq!("f32.TO.i32".parse::<Opcode>().unwrap(), Opcode::F32ToI32);
     }
 }
