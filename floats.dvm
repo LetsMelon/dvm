@@ -1,6 +1,6 @@
-i32.PUSH 1024 // max n for the sine series; change this to use more or fewer terms
+i32.PUSH 64 // max n for the sine series; change this to use more or fewer terms
 f32.PUSH 3.14159265359
-f32.PUSH 1024
+f32.PUSH 32
 f32.DIV // step size, pi / 4 with pi hardcoded as 3.1415
 f32.PUSH 0 // x
 

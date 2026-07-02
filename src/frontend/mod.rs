@@ -5,8 +5,10 @@ pub mod passes;
 
 use crate::opcode::Opcode;
 
+pub use self::assembler::{AssembledProgram, ProgramMetadata};
+
 use self::{
-    assembler::assemble_ir,
+    assembler::assemble_ir_with_metadata,
     ir::lower_to_ir,
     parser::parse_source,
     passes::{
@@ -16,6 +18,10 @@ use self::{
 };
 
 pub fn compile_source(path: &str, source: &str) -> Result<Vec<Opcode>, String> {
+    Ok(compile_source_with_metadata(path, source)?.opcodes)
+}
+
+pub fn compile_source_with_metadata(path: &str, source: &str) -> Result<AssembledProgram, String> {
     let parsed = parse_source(path, source)?;
     let mut ir = lower_to_ir(path, parsed)?;
 
@@ -24,7 +30,7 @@ pub fn compile_source(path: &str, source: &str) -> Result<Vec<Opcode>, String> {
     let noop = NoopOptimizationPass;
 
     optimize_ir(&mut ir, &[&fold_math, &fold_f32, &noop])?;
-    assemble_ir(path, &ir)
+    assemble_ir_with_metadata(path, &ir)
 }
 
 #[cfg(test)]
@@ -89,6 +95,25 @@ Jump .loop
             opcodes,
             vec![Opcode::I32Zero, Opcode::I32Push(-3), Opcode::Jump]
         );
+    }
+
+    #[test]
+    fn compile_metadata_tracks_labels_and_source_lines() {
+        let assembled = compile_source_with_metadata(
+            "<test>",
+            "\
+.start
+i32.ZERO
+Jump .done
+.done
+Halt
+",
+        )
+        .unwrap();
+
+        assert_eq!(assembled.metadata.labels_by_ip[0], vec![".start"]);
+        assert_eq!(assembled.metadata.labels_by_ip[3], vec![".done"]);
+        assert_eq!(assembled.metadata.source_lines_by_ip, vec![2, 3, 3, 5]);
     }
 
     #[test]
