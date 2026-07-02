@@ -7,7 +7,7 @@ use fxprof_processed_profile::{
 
 use crate::{frontend::ProgramMetadata, opcode::Opcode};
 
-const MAX_PROFILE_WEIGHT: u64 = 25_000_000;
+const MAX_PROFILE_WEIGHT: u64 = 50_000_000;
 
 pub struct PerfProfiler<'a> {
     path: &'a str,
@@ -245,7 +245,7 @@ mod tests {
         };
         let opcodes = vec![Opcode::Noop];
         let mut profiler = PerfProfiler::new("test.dvm", &metadata, &opcodes);
-        let divisor = profiler.record_ip_counts(&[10_000_000]);
+        let divisor = profiler.record_ip_counts(&[MAX_PROFILE_WEIGHT * 100]);
 
         let json = serde_json::to_value(&profiler.profile).unwrap();
         let thread = &json["threads"][0];
@@ -264,7 +264,7 @@ mod tests {
         };
         let opcodes = vec![Opcode::Noop, Opcode::Dup, Opcode::Halt];
         let mut profiler = PerfProfiler::new("test.dvm", &metadata, &opcodes);
-        let divisor = profiler.record_ip_counts(&[9_999_949, 25, 26]);
+        let divisor = profiler.record_ip_counts(&[MAX_PROFILE_WEIGHT * 100 - 51, 25, 26]);
 
         let json = serde_json::to_value(&profiler.profile).unwrap();
         let thread = &json["threads"][0];
